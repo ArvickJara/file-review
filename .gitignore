@@ -25,3 +25,92 @@ public/uploads/eventos/*.jpg
 public/uploads/eventos/*.jpeg
 public/uploads/eventos/*.png
 public/uploads/eventos/*.gif
+
+# Python files
+__pycache__/
+*.pyc
+
+# ===============================================
+# PYTHON VIRTUAL ENVIRONMENTS (IMPORTANTE!)
+# ===============================================
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Specific paths for your project
+api-expedientes/venv/
+api-expedientes/env/
+api-expedientes/.venv/
+
+# ===============================================
+# ARCHIVOS ADICIONALES IMPORTANTES
+# ===============================================
+# Uploaded documents (PDFs, DOCs)
+uploads/
+api-expedientes/uploads/
+public/uploads/expedientes/*.pdf
+public/uploads/expedientes/*.doc
+public/uploads/expedientes/*.docx
+
+# Database files
+*.db
+*.sqlite3
+pgdata/
+postgres-data/
+
+# Processed files and cache
+processed/
+text_cache/
+ai_responses/
+
+# Backend specific
+api-expedientes/.env
+api-expedientes/logs/
+api-expedientes/temp/
+
+# ===============================================
+# FRONTEND SPECIFIC
+# ===============================================
+# Frontend build and dependencies
+fe-expedientes/node_modules/
+fe-expedientes/dist/
+fe-expedientes/build/
+fe-expedientes/.vite/
+fe-expedientes/.env
+fe-expedientes/.env.local
+
+# ESLint and testing
+fe-expedientes/.eslintcache
+fe-expedientes/coverage/
+
+# ===============================================
+# DOCKER Y DEPLOYMENT
+# ===============================================
+# Docker volumes
+docker-data/
+volumes/
+
+# Docker Compose override
+docker-compose.override.yml
+
+# ===============================================
+# ARCHIVOS DE DESARROLLO
+# ===============================================
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Test files
+test-results/
+reports/

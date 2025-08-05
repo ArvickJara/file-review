@@ -8,7 +8,6 @@ import { useState, useEffect } from 'react';
 
 const Index = () => {
     const [displayText, setDisplayText] = useState('');
-    const [showCursor, setShowCursor] = useState(true);
     const fullText = 'Plataforma de Análisis de Expedientes con IA';
 
     useEffect(() => {
