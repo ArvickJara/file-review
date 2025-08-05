@@ -1,0 +1,27 @@
+# Node.js 
+node_modules/
+
+# .env file for sensitive data like database credentials and secret keys
+.env
+
+# Log files
+*.log
+
+# Directory for build files (if using build tools like webpack or vite)
+dist/
+
+# Knex migration files and other generated files
+*.sql
+*.sqlite
+
+# Mac system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# image files
+public/uploads/eventos/*.jpg
+public/uploads/eventos/*.jpeg
+public/uploads/eventos/*.png
+public/uploads/eventos/*.gif
