@@ -61,7 +61,12 @@ async def process_document(file: UploadFile = File(...)):
         # Guardar en base de datos (implementar después)
         # await save_analysis_to_db(file.filename, observations)
         
-        
+        return AnalysisResponse(
+            filename=file.filename,
+            total_observations=len(observations),
+            observations=observations,
+            status="completed"
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
