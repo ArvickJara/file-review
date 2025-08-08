@@ -26,9 +26,11 @@ public/uploads/eventos/*.jpeg
 public/uploads/eventos/*.png
 public/uploads/eventos/*.gif
 
-# Python files
+# Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # ===============================================
 # PYTHON VIRTUAL ENVIRONMENTS (IMPORTANTE!)
@@ -114,3 +116,11 @@ docker-compose.override.yml
 # Test files
 test-results/
 reports/
+
+# Variables de entorno
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+api-expedientes/.env 
