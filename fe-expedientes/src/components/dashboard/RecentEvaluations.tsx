@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Clock, CheckCircle, XCircle, AlertTriangle, Eye } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Evaluation {
     id: string;
@@ -19,8 +20,8 @@ interface Evaluation {
 const mockEvaluations: Evaluation[] = [
     {
         id: '1',
-        fileName: 'Expediente_Proyecto_A.pdf',
-        date: '2024-01-15',
+        fileName: 'Expediente_Largo_Nombre_Proyecto_A.pdf',
+        date: 'Hace 2 horas',
         status: 'completed',
         score: 85,
         issues: { format: 2, spelling: 5, content: 1 }
@@ -28,7 +29,7 @@ const mockEvaluations: Evaluation[] = [
     {
         id: '2',
         fileName: 'Informe_Tecnico_B.docx',
-        date: '2024-01-15',
+        date: 'Hace 1 día',
         status: 'in-progress',
         score: 0,
         issues: { format: 0, spelling: 0, content: 0 }
@@ -36,7 +37,7 @@ const mockEvaluations: Evaluation[] = [
     {
         id: '3',
         fileName: 'Propuesta_C.pdf',
-        date: '2024-01-14',
+        date: 'Hace 2 días',
         status: 'completed',
         score: 92,
         issues: { format: 1, spelling: 2, content: 0 }
@@ -44,7 +45,7 @@ const mockEvaluations: Evaluation[] = [
     {
         id: '4',
         fileName: 'Especificaciones_D.doc',
-        date: '2024-01-14',
+        date: 'Hace 3 días',
         status: 'failed',
         score: 0,
         issues: { format: 0, spelling: 0, content: 0 }
@@ -55,13 +56,13 @@ const RecentEvaluations = () => {
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'completed':
-                return <CheckCircle className="h-4 w-4 text-success" />;
+                return <CheckCircle className="h-5 w-5 text-success" />;
             case 'in-progress':
-                return <Clock className="h-4 w-4 text-warning" />;
+                return <Clock className="h-5 w-5 text-warning animate-pulse" />;
             case 'failed':
-                return <XCircle className="h-4 w-4 text-error" />;
+                return <XCircle className="h-5 w-5 text-destructive" />;
             default:
-                return <Clock className="h-4 w-4 text-muted-foreground" />;
+                return <Clock className="h-5 w-5 text-muted-foreground" />;
         }
     };
 
@@ -72,7 +73,7 @@ const RecentEvaluations = () => {
             case 'in-progress':
                 return <Badge variant="secondary" className="bg-warning/10 text-warning border-warning/20">En proceso</Badge>;
             case 'failed':
-                return <Badge variant="secondary" className="bg-error/10 text-error border-error/20">Fallido</Badge>;
+                return <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/20">Fallido</Badge>;
             default:
                 return <Badge variant="secondary">Desconocido</Badge>;
         }
@@ -81,7 +82,7 @@ const RecentEvaluations = () => {
     const getScoreColor = (score: number) => {
         if (score >= 90) return 'text-success';
         if (score >= 70) return 'text-warning';
-        return 'text-error';
+        return 'text-destructive';
     };
 
     return (
@@ -93,51 +94,63 @@ const RecentEvaluations = () => {
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                <div className="space-y-4">
-                    {mockEvaluations.map((evaluation) => (
-                        <div
-                            key={evaluation.id}
-                            className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-                        >
-                            <div className="flex items-center space-x-4">
-                                <div className="flex items-center space-x-2">
+                <div className="space-y-3">
+                    {mockEvaluations.map((evaluation) => {
+                        const totalIssues = evaluation.issues.format + evaluation.issues.spelling + evaluation.issues.content;
+                        return (
+                            <div
+                                key={evaluation.id}
+                                className="flex flex-col items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                                {/* --- Parte Izquierda: Información del Archivo --- */}
+                                <div className="flex items-center gap-3 w-full sm:w-auto">
                                     {getStatusIcon(evaluation.status)}
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="truncate font-medium text-sm">{evaluation.fileName}</p>
+                                        <p className="text-xs text-muted-foreground">{evaluation.date}</p>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <p className="font-medium text-sm">{evaluation.fileName}</p>
-                                    <p className="text-xs text-muted-foreground">{evaluation.date}</p>
-                                </div>
-                            </div>
 
-                            <div className="flex items-center space-x-4">
-                                {evaluation.status === 'completed' && (
-                                    <>
-                                        <div className="text-right">
-                                            <p className={`text-sm font-bold ${getScoreColor(evaluation.score)}`}>
+                                {/* --- Parte Derecha: Estado y Acciones --- */}
+                                <div className="flex w-full items-center justify-between sm:w-auto sm:justify-end sm:gap-4">
+                                    {evaluation.status === 'completed' && (
+                                        <div className="flex items-center gap-2 text-right">
+                                            {totalIssues > 0 && (
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <span className="flex cursor-pointer items-center text-xs text-muted-foreground">
+                                                                <AlertTriangle className="mr-1 h-4 w-4 text-warning" />
+                                                                {totalIssues}
+                                                            </span>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                            <p>Formato: {evaluation.issues.format}</p>
+                                                            <p>Ortografía: {evaluation.issues.spelling}</p>
+                                                            <p>Contenido: {evaluation.issues.content}</p>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            )}
+                                            <p className={`text-lg font-bold ${getScoreColor(evaluation.score)}`}>
                                                 {evaluation.score}%
                                             </p>
-                                            <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                                                {evaluation.issues.format > 0 && (
-                                                    <span className="flex items-center">
-                                                        <AlertTriangle className="h-3 w-3 mr-1" />
-                                                        {evaluation.issues.format + evaluation.issues.spelling + evaluation.issues.content}
-                                                    </span>
-                                                )}
-                                            </div>
                                         </div>
-                                    </>
-                                )}
+                                    )}
 
-                                <div className="flex items-center space-x-2">
-                                    {getStatusBadge(evaluation.status)}
-                                    <Button variant="ghost" size="icon">
-                                        <Eye className="h-4 w-4" />
-                                    </Button>
+                                    {/* Spacer para alinear en móvil */}
+                                    {evaluation.status !== 'completed' && <div className="flex-1 sm:hidden"></div>}
+
+                                    <div className="flex items-center gap-2">
+                                        {getStatusBadge(evaluation.status)}
+                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                            <Eye className="h-4 w-4" />
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </CardContent>
         </Card>

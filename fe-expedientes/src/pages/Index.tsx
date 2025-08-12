@@ -1,4 +1,3 @@
-import AppLayout from "@/components/layout/AppLayout";
 import DashboardStats from "@/components/dashboard/DashboardStats";
 import DashboardContent from "@/components/dashboard/DashboardContent";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -26,28 +25,42 @@ const Index = () => {
 
     return (
         <div className="h-full flex flex-col space-y-6">
-            {/* Page Header */}
-            <div className="flex justify-between items-center">
-                <div className="">
+            {/* Page Header - Corregido */}
+            <div className="relative flex justify-between items-center gap-4">
+                {/* Izquierda: Logo */}
+                <div className="flex-shrink-0">
                     <img
                         src={logoRegionalLight}
                         alt="Logo Regional"
-                        className="h-16 w-auto object-contain dark:hidden drop-shadow-lg"
+                        className="h-12 sm:h-16 w-auto object-contain dark:hidden drop-shadow-lg"
                     />
-                    {/* Logo para tema oscuro (letras blancas) */}
                     <img
                         src={logoRegionalDark}
                         alt="Logo Regional"
-                        className="h-16 w-auto object-contain hidden dark:block drop-shadow-lg"
+                        className="h-12 sm:h-16 w-auto object-contain hidden dark:block drop-shadow-lg"
                     />
                 </div>
-                <div className="text-center flex-1">
-                    <h1 className="text-3xl font-black text-foreground">
+
+                {/* Centro (solo en escritorio): Título */}
+                <div className="hidden sm:block absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                    <h1 className="text-2xl md:text-3xl font-black text-foreground min-h-[2.5rem] whitespace-nowrap">
                         {displayText}
                     </h1>
                 </div>
-                <ThemeToggle />
+
+                {/* Derecha: Theme Toggle */}
+                <div className="flex-shrink-0">
+                    <ThemeToggle />
+                </div>
             </div>
+
+            {/* Título para vista móvil (debajo del header) */}
+            <div className="sm:hidden text-center">
+                <h1 className="text-2xl font-black text-foreground min-h-[2.5rem]">
+                    {displayText}
+                </h1>
+            </div>
+
 
             {/* Statistics */}
             <DashboardStats />
