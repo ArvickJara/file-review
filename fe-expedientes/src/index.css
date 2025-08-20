@@ -170,3 +170,25 @@ All colors MUST be HSL.
         @apply bg-background text-foreground;
     }
 }
+
+/* Animaciones suaves para el sidebar */
+[data-sidebar] {
+    transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1),
+        width 300ms cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animación para el contenido cuando se oculta/muestra el sidebar */
+[data-sidebar-inset] {
+    transition: margin-left 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover effects más suaves */
+.sidebar-menu-button {
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animación del trigger */
+[data-sidebar-trigger] {
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
