@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { ThemeToggle } from "./components/ThemeToggle";
 import AppLayout from "./components/layout/AppLayout";
 import Index from "./pages/Index";
+import CostosPresupuestos from "./pages/CostosPresupuestos";
 import NotFound from "./pages/NotFound";
 import logoRegionalLight from "@/assets/logo-region-light.png";
 import logoRegionalDark from "@/assets/logo-region-dark.png";
@@ -237,6 +238,7 @@ const App = () => {
                                                     <Routes>
                                                         <Route path="/" element={<Index />} />
                                                         <Route path="*" element={<NotFound />} />
+                                                        <Route path="/costos-presupuestos" element={<CostosPresupuestos />} />
                                                     </Routes>
                                                 </AppLayout>
                                             </FadeIn>

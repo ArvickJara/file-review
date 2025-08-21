@@ -15,7 +15,7 @@ import logoRegionalDark from "@/assets/logo-region-dark.png";
 
 const mainItems = [
     { title: "Dashboard", url: "/", icon: Home },
-    { title: "Expedientes", url: "/expedientes", icon: FileText },
+    { title: "Costos y presupuestos", url: "/costos-presupuestos", icon: FileText },
     { title: "Subir Archivos", url: "/upload", icon: Upload },
     { title: "Análisis", url: "/analytics", icon: BarChart3 },
 ];

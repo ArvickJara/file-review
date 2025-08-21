@@ -1,0 +1,30 @@
+{
+  "name": "web-muni-eval-ia",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate-seed": "node .\\createDatabase.js & npx knex migrate:latest & npx knex seed:run"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "@vitejs/plugin-react-swc": "^3.11.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "lovable-tagger": "^1.1.8",
+    "multer": "^2.0.2",
+    "mysql2": "^3.14.2",
+    "sonner": "^2.0.6",
+    "tailwind-merge": "^3.3.1"
+  }
+}
