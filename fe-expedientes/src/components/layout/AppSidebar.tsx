@@ -9,18 +9,9 @@ import {
     Database,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
-
-import {
-    Sidebar,
-    SidebarContent,
-    SidebarGroup,
-    SidebarGroupContent,
-    SidebarGroupLabel,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem,
-    SidebarHeader,
-} from "@/components/ui/sidebar";
+import { useSidebar } from "@/contexts/SidebarContext";
+import logoRegionalLight from "@/assets/logo-region-light.png";
+import logoRegionalDark from "@/assets/logo-region-dark.png";
 
 const mainItems = [
     { title: "Dashboard", url: "/", icon: Home },
@@ -37,70 +28,80 @@ const managementItems = [
 
 export function AppSidebar() {
     const location = useLocation();
-    const currentPath = location.pathname;
+    const { isOpen } = useSidebar();
+    const isActive = (path: string) => location.pathname === path;
 
-    const isActive = (path: string) => currentPath === path;
+    // Si el sidebar está cerrado, no renderizamos nada
+    if (!isOpen) return null;
 
     return (
-        <Sidebar
-            collapsible="offcanvas"
-            className="fixed left-0 top-0 h-screen z-30 transition-all duration-300 ease-in-out"
-        >
-            <SidebarHeader className="border-b border-border/50 bg-sidebar sticky top-0 z-10">
-                <div className="flex items-center space-x-2 p-3">
-                    <FileText className="h-6 w-6 text-primary" />
+        <div className="flex flex-col h-full w-64 overflow-hidden">
+            {/* Cabecera */}
+            <div className="p-3 flex justify-center items-center">
+                <div className="flex items-center justify-center gap-3">
+                    <img
+                        src={logoRegionalLight}
+                        alt="Logo"
+                        className="h-14 w-auto dark:hidden" // Logo más grande
+                    />
+                    <img
+                        src={logoRegionalDark}
+                        alt="Logo"
+                        className="h-14 w-auto hidden dark:block" // Logo más grande
+                    />
+                </div>
+            </div>
+
+            {/* Contenido con scroll */}
+            <div className="flex-1 overflow-y-auto py-6">
+                {/* Sección Principal */}
+                <div className="mb-4">
+                    <div className="px-3 py-1">
+                        <h3 className="text-xs font-medium text-muted-foreground">Principal</h3>
+                    </div>
                     <div>
-                        <h2 className="text-sm font-bold">Menú Principal</h2>
-                        <p className="text-xs text-muted-foreground">Navegación</p>
+                        {mainItems.map((item) => (
+                            <NavLink
+                                key={item.title}
+                                to={item.url}
+                                className={({ isActive }) =>
+                                    `flex items-center gap-3 rounded-md px-3 py-2 text-sm mx-1 my-0.5 transition-all ${isActive
+                                        ? "bg-accent text-accent-foreground"
+                                        : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
+                                    }`
+                                }
+                            >
+                                <item.icon className="h-4 w-4" />
+                                <span>{item.title}</span>
+                            </NavLink>
+                        ))}
                     </div>
                 </div>
-            </SidebarHeader>
 
-            <SidebarContent className="flex-1 overflow-y-auto">
-                <SidebarGroup>
-                    <SidebarGroupLabel>Principal</SidebarGroupLabel>
-                    <SidebarGroupContent>
-                        <SidebarMenu>
-                            {mainItems.map((item) => (
-                                <SidebarMenuItem key={item.title}>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isActive(item.url)}
-                                        className="transition-all duration-200 ease-in-out hover:bg-accent/80"
-                                    >
-                                        <NavLink to={item.url}>
-                                            <item.icon />
-                                            <span>{item.title}</span>
-                                        </NavLink>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                            ))}
-                        </SidebarMenu>
-                    </SidebarGroupContent>
-                </SidebarGroup>
-
-                <SidebarGroup>
-                    <SidebarGroupLabel>Gestión</SidebarGroupLabel>
-                    <SidebarGroupContent>
-                        <SidebarMenu>
-                            {managementItems.map((item) => (
-                                <SidebarMenuItem key={item.title}>
-                                    <SidebarMenuButton
-                                        asChild
-                                        isActive={isActive(item.url)}
-                                        className="transition-all duration-200 ease-in-out hover:bg-accent/80"
-                                    >
-                                        <NavLink to={item.url}>
-                                            <item.icon />
-                                            <span>{item.title}</span>
-                                        </NavLink>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                            ))}
-                        </SidebarMenu>
-                    </SidebarGroupContent>
-                </SidebarGroup>
-            </SidebarContent>
-        </Sidebar>
+                {/* Sección Gestión */}
+                <div>
+                    <div className="px-3 py-1">
+                        <h3 className="text-xs font-medium text-muted-foreground">Gestión</h3>
+                    </div>
+                    <div>
+                        {managementItems.map((item) => (
+                            <NavLink
+                                key={item.title}
+                                to={item.url}
+                                className={({ isActive }) =>
+                                    `flex items-center gap-3 rounded-md px-3 py-2 text-sm mx-1 my-0.5 transition-all ${isActive
+                                        ? "bg-accent text-accent-foreground"
+                                        : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
+                                    }`
+                                }
+                            >
+                                <item.icon className="h-4 w-4" />
+                                <span>{item.title}</span>
+                            </NavLink>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }

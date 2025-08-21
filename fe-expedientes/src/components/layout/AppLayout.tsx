@@ -1,60 +1,63 @@
 // src/components/layout/AppLayout.tsx
-import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
-import { Bell } from "lucide-react";
+import { Bell, Menu, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserButton } from '@clerk/clerk-react';
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Separator } from "@/components/ui/separator";
-import logoRegionalLight from "@/assets/logo-region-light.png";
-import logoRegionalDark from "@/assets/logo-region-dark.png";
+import { SidebarProvider, useSidebar } from "@/contexts/SidebarContext";
 
 interface AppLayoutProps {
     children: React.ReactNode;
 }
 
-export default function AppLayout({ children }: AppLayoutProps) {
+function MainLayout({ children }: { children: React.ReactNode }) {
+    const { isOpen, toggle } = useSidebar();
+
     return (
-        <SidebarProvider defaultOpen={true}>
-            <AppSidebar />
-            <SidebarInset className="transition-all duration-300 ease-in-out">
-                {/* Header más grande con animaciones */}
-                <header className="sticky top-0 z-40 flex h-20 shrink-0 items-center gap-3 px-6 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
-                    <SidebarTrigger className="transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground p-2 rounded-md" />
-                    <Separator orientation="vertical" className="mr-3 h-6" />
+        <div className="flex h-screen overflow-hidden">
+            {/* Sidebar fijo */}
+            <div className={`fixed left-0 top-0 h-screen z-30 transition-all duration-300 ease-in-out border-r bg-background ${isOpen ? 'w-64' : 'w-0'}`}>
+                <AppSidebar />
+            </div>
 
-                    {/* Logo más grande */}
-                    <div className="flex items-center gap-4 flex-1">
-                        <img
-                            src={logoRegionalLight}
-                            alt="Logo Regional"
-                            className="h-12 w-auto object-contain dark:hidden transition-all duration-200 ease-in-out"
-                        />
-                        <img
-                            src={logoRegionalDark}
-                            alt="Logo Regional"
-                            className="h-12 w-auto object-contain hidden dark:block transition-all duration-200 ease-in-out"
-                        />
+            <div className={`flex flex-col h-screen w-full transition-all duration-300 ease-in-out ${isOpen ? 'ml-64' : 'ml-0'}`}>
+                <header className="sticky top-0 z-40 flex h-20 items-center px-6 border-b bg-background w-full shadow-sm">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggle}
+                        className="hover:bg-accent/50 h-10 w-10 transition-all duration-200"
+                    >
+                        {isOpen ? (
+                            <ChevronLeft className="h-6 w-6" />
+                        ) : (
+                            <Menu className="h-6 w-6" />
+                        )}
+                    </Button>
 
-                    </div>
+                    <div className="flex-1"></div>
 
-                    {/* Acciones del usuario con animaciones */}
-                    <div className="ml-auto flex items-center space-x-3">
+                    <div className="flex items-center space-x-4">
+                        {/* Campana de notificaciones */}
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground h-10 w-10"
+                            className="h-10 w-10 rounded-full flex items-center justify-center"
                         >
                             <Bell className="h-5 w-5" />
                         </Button>
-                        <div className="transition-all duration-200 ease-in-out">
+
+                        {/* Botón de tema - envuelto para asegurar tamaño consistente */}
+                        <div className="flex items-center justify-center h-10 w-10">
                             <ThemeToggle />
                         </div>
-                        <div className="transition-all duration-200 ease-in-out hover:scale-105">
+
+                        {/* Contenedor para el UserButton con tamaño y estilo consistentes */}
+                        <div className="flex items-center justify-center h-10 w-10 rounded-full overflow-hidden">
                             <UserButton
                                 appearance={{
                                     elements: {
-                                        avatarBox: "h-10 w-10"
+                                        userButtonAvatarBox: "h-9 w-9"
                                     }
                                 }}
                             />
@@ -62,13 +65,21 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     </div>
                 </header>
 
-                {/* Contenido Principal con mejor spacing */}
-                <main className="flex-1 overflow-auto p-8">
-                    <div className="max-w-7xl mx-auto">
+                {/* Contenido scrolleable */}
+                <main className="flex-1 overflow-auto w-full">
+                    <div className="p-6 w-full">
                         {children}
                     </div>
                 </main>
-            </SidebarInset>
+            </div>
+        </div>
+    );
+}
+
+export default function AppLayout({ children }: AppLayoutProps) {
+    return (
+        <SidebarProvider>
+            <MainLayout children={children} />
         </SidebarProvider>
     );
 }
