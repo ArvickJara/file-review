@@ -8,7 +8,7 @@ module.exports = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'morococha_db',
+    database: process.env.DB_NAME || 'eval_db',
     charset: 'utf8'
   },
   migrations: {
