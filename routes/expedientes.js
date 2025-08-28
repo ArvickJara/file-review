@@ -3,7 +3,8 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const OpenAI = require('openai'); // <- CommonJS correcto
+const crypto = require('crypto');
+const OpenAI = require('openai');
 const logger = require('../utils/logger');
 const db = require('../db/knex');
 const multer = require('multer');
@@ -23,7 +24,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Acepta cualquier nombre de campo y lo mapea a req.file para tu código actual
+// Acepta cualquier nombre de campo y lo mapea a req.file para mantener compatibilidad
 const acceptAnyFile = [
     upload.any(),
     (req, _res, next) => {
@@ -34,81 +35,97 @@ const acceptAnyFile = [
     }
 ];
 
-// === Cliente de OpenAI ===
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+// === Cliente de OpenAI (Responses API) ===
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const MODEL_NAME = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-// Ruta para subir y evaluar expedientes de costos y presupuestos
+// === Rulebook (OBLIGATORIO) ===
+function loadRulebookCostosOrFail() {
+    const p = process.env.RULEBOOK_PATH
+        ? path.resolve(process.env.RULEBOOK_PATH)
+        : path.resolve(__dirname, '..', 'rules', 'rulebook_costos_v2.json');
+
+    if (!fs.existsSync(p)) {
+        const msg = `Rulebook de costos/presupuestos no encontrado en: ${p}. ` +
+            `Configura RULEBOOK_PATH o coloca el archivo en /rules.`;
+        const err = new Error(msg);
+        err.statusCode = 422;
+        throw err;
+    }
+    const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const version =
+        json.version ||
+        crypto.createHash('sha1').update(JSON.stringify(json)).digest('hex').slice(0, 8);
+
+    return { json, version, path: p };
+}
+
+// === Utilidad: conteo simple de observaciones numeradas ===
+function countNumberedObservations(text) {
+    return (
+        (text.match(/^\s*\d+\./gm) || []).length ||
+        (text.match(/\d\./g) || []).length ||
+        0
+    );
+}
+
+// Subir y evaluar expediente de costos/presupuestos (USA SIEMPRE RULEBOOK)
 router.post('/evaluar-costos-presupuestos', acceptAnyFile, async (req, res) => {
     try {
         if (!process.env.OPENAI_API_KEY) {
-            return res.status(500).json({
-                success: false,
-                message: 'Falta OPENAI_API_KEY en variables de entorno'
-            });
+            return res.status(500).json({ success: false, message: 'Falta OPENAI_API_KEY' });
         }
-
-        // Si no hay archivo subido
         if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'No se ha subido ningún archivo'
-            });
+            return res.status(400).json({ success: false, message: 'No se ha subido ningún archivo' });
         }
 
+        // 1) Cargar rulebook (OBLIGATORIO)
+        let rule;
+        try {
+            rule = loadRulebookCostosOrFail(); // { json, version, path }
+        } catch (e) {
+            const code = e.statusCode || 500;
+            return res.status(code).json({ success: false, message: e.message });
+        }
+
+        const filePath = path.join(uploadsDir, req.file.filename);
         logger.info(`Archivo recibido: ${req.file.filename}`, 'EvaluarCostos');
 
-        // Ruta completa del archivo
-        const filePath = path.join(uploadsDir, req.file.filename);
-
-        // Convertir archivo a base64 para enviarlo al modelo
-        const fileBuffer = fs.readFileSync(filePath);
-        const fileBase64 = fileBuffer.toString('base64');
-        const mimeType = req.file.mimetype || 'application/octet-stream';
-
-        // Mensajes para el modelo (Vision)
-        const messages = [
-            {
-                role: 'system',
-                content:
-                    'Eres un experto en evaluación de presupuestos y costos para proyectos de infraestructura. El usuario te enviará un documento de costos y presupuestos para analizar.'
-            },
-            {
-                role: 'user',
-                content: [
-                    {
-                        type: 'text',
-                        text: `Este es un documento de costos y presupuestos. Por favor analízalo y evalúa los siguientes aspectos:
-1) ¿Los costos unitarios están dentro de rangos razonables para el mercado actual?
-2) ¿Existe alguna inconsistencia o error en los cálculos?
-3) ¿El presupuesto total es coherente con el tipo de proyecto?
-4) ¿Hay partidas sobredimensionadas o subdimensionadas?
-5) Recomendaciones para mejorar o corregir el presupuesto.
-
-Responde en formato claro con viñetas y numeración, indicando ejemplos concretos cuando sea posible.`
-                    },
-                    {
-                        type: 'image_url',
-                        image_url: { url: `data:${mimeType};base64,${fileBase64}` }
-                    }
-                ]
-            }
-        ];
-
-        // Llamada al modelo (usa un modelo vigente con visión)
-        const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages,
-            max_tokens: 4000
+        // 2) Subir el archivo TAL CUAL a OpenAI Files y referenciar por file_id
+        const uploaded = await openai.files.create({
+            file: fs.createReadStream(filePath),
+            purpose: 'assistants'
         });
 
-        const analysis = completion.choices?.[0]?.message?.content || 'Sin análisis devuelto por el modelo.';
+        // 3) Prompt mínimo (el rulebook dicta el QUÉ; el prompt dicta el CÓMO)
+        const prompt =
+            `Audita este expediente de COSTOS Y PRESUPUESTOS usando ESTRICTAMENTE el RULEBOOK_JSON.
+            Responde en texto con:
+            1) Observaciones numeradas, cada una indicando (id de regla y título) que sustenta el hallazgo.
+            2) Inconsistencias de cálculo (ACU, IGV, GG, Utilidad, fórmulas polinómicas).
+            3) Riesgos y partidas sobredimensionadas/subdimensionadas (si aplica).
+            4) Recomendaciones accionables indicando dónde corregir (página/tabla si es posible).`;
 
-        // Crear un ID único para el expediente
+        // 4) Llamada al modelo (Responses API + file input)
+        const resp = await openai.responses.create({
+            model: MODEL_NAME,
+            input: [
+                { role: 'system', content: 'Eres un auditor de costos/presupuestos para obras públicas. Sé riguroso y referencia la regla aplicada.' },
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'input_text', text: prompt },
+                        { type: 'input_text', text: `RULEBOOK_JSON:\n${JSON.stringify(rule.json)}` },
+                        { type: 'input_file', file_id: uploaded.id }
+                    ]
+                }
+            ]
+        });
+
+        const analysis = resp.output_text || 'Sin análisis devuelto por el modelo.';
         const expedienteId = Date.now().toString();
 
-        // Guardar en la base de datos
+        // 5) Guardar en BD
         await db('expedientes').insert({
             id: expedienteId,
             nombre: req.file.originalname,
@@ -119,27 +136,27 @@ Responde en formato claro con viñetas y numeración, indicando ejemplos concret
             usuario_id: req.user?.id || 1
         });
 
-        // Guardar el análisis
         await db('analisis_expedientes').insert({
             expediente_id: expedienteId,
             contenido: analysis,
             fecha_analisis: new Date(),
-            modelo_ia: 'gpt-4o-mini'
+            modelo_ia: MODEL_NAME
+            // Si añadiste columnas para JSON/score/riesgo, complétalas aquí.
         });
 
-        // Guardar también como archivo para respaldo
+        // 6) Guardar respaldo del análisis en disco (incluye metadatos del rulebook)
         const resultsDir = path.join(__dirname, '..', 'public', 'resultados');
         fs.mkdirSync(resultsDir, { recursive: true });
-        const resultPath = path.join(resultsDir, `${expedienteId}.json`);
         fs.writeFileSync(
-            resultPath,
+            path.join(resultsDir, `${expedienteId}.json`),
             JSON.stringify(
                 {
                     analysis,
                     metadata: {
                         filename: req.file.originalname,
                         processedAt: new Date(),
-                        model: 'gpt-4o-mini'
+                        model: MODEL_NAME,
+                        rulebook: { version: rule.version, path: rule.path }
                     }
                 },
                 null,
@@ -147,73 +164,57 @@ Responde en formato claro con viñetas y numeración, indicando ejemplos concret
             )
         );
 
-        // Aproximar número de observaciones (cuenta líneas numeradas 1. 2. 3. ...)
-        const observationCount =
-            (analysis.match(/^\s*\d+\./gm) || []).length ||
-            (analysis.match(/\d\./g) || []).length ||
-            5;
+        // 7) Resumen rápido
+        const observationCount = countNumberedObservations(analysis);
 
-        // Responder al cliente
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             expedienteId,
-            file: {
-                name: req.file.originalname,
-                path: `/uploads/${req.file.filename}`
-            },
+            file: { name: req.file.originalname, path: `/uploads/${req.file.filename}` },
             analysis,
-            summary: {
-                total_observations: observationCount
-            }
+            summary: { total_observations: observationCount },
+            rulebook: { version: rule.version }
         });
     } catch (error) {
         logger.error(`Error al procesar archivo: ${error.message}`, 'EvaluarCostos');
-        res.status(500).json({
-            success: false,
-            message: 'Error al procesar el archivo',
-            error: error.message
-        });
+        return res
+            .status(500)
+            .json({ success: false, message: 'Error al procesar el archivo', error: error.message });
     }
 });
 
-// Ruta para obtener un expediente por ID
+// Obtener un expediente por ID
 router.get('/:id', async (req, res) => {
     try {
         const expediente = await db('expedientes').where('id', req.params.id).first();
-
-        if (!expediente) {
+        if (!expediente)
             return res.status(404).json({ success: false, message: 'Expediente no encontrado' });
-        }
 
-        const analisis = await db('analisis_expedientes').where('expediente_id', req.params.id).first();
+        const analisis = await db('analisis_expedientes')
+            .where('expediente_id', req.params.id)
+            .first();
 
-        res.status(200).json({
-            success: true,
-            expediente,
-            analisis: analisis ? analisis.contenido : null
-        });
+        return res
+            .status(200)
+            .json({ success: true, expediente, analisis: analisis ? analisis.contenido : null });
     } catch (error) {
         logger.error(`Error al obtener expediente: ${error.message}`, 'GetExpediente');
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener el expediente',
-            error: error.message
-        });
+        return res
+            .status(500)
+            .json({ success: false, message: 'Error al obtener el expediente', error: error.message });
     }
 });
 
-// Listar todos los expedientes
+// Listar expedientes
 router.get('/', async (_req, res) => {
     try {
         const expedientes = await db('expedientes').select('*').orderBy('fecha_creacion', 'desc');
-        res.status(200).json({ success: true, expedientes });
+        return res.status(200).json({ success: true, expedientes });
     } catch (error) {
         logger.error(`Error al listar expedientes: ${error.message}`, 'ListExpedientes');
-        res.status(500).json({
-            success: false,
-            message: 'Error al listar expedientes',
-            error: error.message
-        });
+        return res
+            .status(500)
+            .json({ success: false, message: 'Error al listar expedientes', error: error.message });
     }
 });
 

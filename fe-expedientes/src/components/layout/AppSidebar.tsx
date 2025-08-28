@@ -14,7 +14,7 @@ import logoRegionalLight from "@/assets/logo-region-light.png";
 import logoRegionalDark from "@/assets/logo-region-dark.png";
 
 const mainItems = [
-    { title: "Dashboard", url: "/", icon: Home },
+    { title: "Expedientes - TDR", url: "/", icon: Home },
     { title: "Costos y presupuestos", url: "/costos-presupuestos", icon: FileText },
     { title: "Subir Archivos", url: "/upload", icon: Upload },
     { title: "Análisis", url: "/analytics", icon: BarChart3 },
@@ -42,12 +42,12 @@ export function AppSidebar() {
                     <img
                         src={logoRegionalLight}
                         alt="Logo"
-                        className="h-14 w-auto dark:hidden" // Logo más grande
+                        className="h-14 w-auto dark:hidden"
                     />
                     <img
                         src={logoRegionalDark}
                         alt="Logo"
-                        className="h-14 w-auto hidden dark:block" // Logo más grande
+                        className="h-14 w-auto hidden dark:block"
                     />
                 </div>
             </div>

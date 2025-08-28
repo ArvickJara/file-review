@@ -1,0 +1,284 @@
+{
+    "name": "Rulebook de Revisión de Costos, Presupuesto y Programación",
+    "version": "2.0.0",
+    "jurisdiccion": "Perú",
+    "source": "Costos-presupuesto-y-programacion.pdf",
+    "scoring": {
+        "peso_por_severidad": {
+            "alta": 3,
+            "media": 2,
+            "baja": 1
+        },
+        "umbral_riesgo": {
+            "bajo": [
+                80,
+                100
+            ],
+            "medio": [
+                60,
+                79
+            ],
+            "alto": [
+                0,
+                59
+            ]
+        },
+        "nota": "score = (suma pesos reglas cumplidas / suma pesos totales) * 100"
+    },
+    "rules": [
+        {
+            "id": "PARTES-01",
+            "titulo": "Partes del presupuesto (cabecera, cuerpo y pie)",
+            "descripcion": "El presupuesto presenta cabecera (datos generales), cuerpo (partidas/APU) y pie (CD, CI, IGV, Total).",
+            "tipo": "estructura",
+            "severidad": "baja",
+            "verificacion": {
+                "metodo": "llm_extraction",
+                "requiere": [
+                    "cabecera",
+                    "cuerpo",
+                    "pie"
+                ]
+            },
+            "evidencia_hint": "Sección 'PARTES DE PRESUPUESTO'"
+        },
+        {
+            "id": "PRES-01",
+            "titulo": "Componentes mínimos del presupuesto",
+            "descripcion": "I) Infraestructura; II) Plan de vigilancia y control COVID-19 (si aplica); III) Mobiliario y Equipamiento.",
+            "tipo": "estructura",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "llm_extraction",
+                "requiere": [
+                    "Infraestructura",
+                    "Mobiliario",
+                    "Equipamiento"
+                ]
+            },
+            "evidencia_hint": "Sección 'COMPONENTES DE PRESUPUESTO DE OBRA'"
+        },
+        {
+            "id": "ESP-01",
+            "titulo": "Presupuestos separados por especialidad",
+            "descripcion": "Separación por especialidades con factores determinantes declarados (ubicación, suelo, métodos, cronograma, etc.).",
+            "tipo": "estructura",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'PRESUPUESTOS SEPARADOS POR ESPECIALIDADES'"
+        },
+        {
+            "id": "APU-01",
+            "titulo": "APU desagregados y sin IGV (contrata)",
+            "descripcion": "Materiales, Mano de Obra y Equipo desagregados; materiales y equipo sin IGV; flete incluido (puestos en obra).",
+            "tipo": "semantica",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "llm_extraction",
+                "igv": "sin_igv_en_materiales_y_equipo"
+            },
+            "evidencia_hint": "Secciones 'ANÁLISIS DE C.U.' y 'COMPONENTES DE PRESUPUESTO… (ACU)'"
+        },
+        {
+            "id": "APU-02",
+            "titulo": "Compatibilidad APU ↔ planos/ET",
+            "descripcion": "Descripción, unidad, rendimiento, cuadrilla e insumos compatibles con planos y especificaciones técnicas.",
+            "tipo": "semantica",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Recomendaciones de procesamiento de APU"
+        },
+        {
+            "id": "APU-03",
+            "titulo": "Rendimientos de mano de obra sustentados",
+            "descripcion": "Rendimientos mínimos oficiales (RM 175-1968) o referencias de obras ejecutadas; coherentes con la zona.",
+            "tipo": "semantica",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'RENDIMIENTOS DE MANO DE OBRA'"
+        },
+        {
+            "id": "EQP-01",
+            "titulo": "Costo HM de equipos según modalidad",
+            "descripcion": "Contrata: HM = posesión + operación; Directa: operación. Herramientas manuales como % de MO (3–5%).",
+            "tipo": "semantica",
+            "severidad": "baja",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Secciones 'COSTO DE MAQUINARIA Y EQUIPO' y 'HERRAMIENTAS MANUALES'"
+        },
+        {
+            "id": "IND-01",
+            "titulo": "Costos indirectos declarados (GG fijos/variables) y Utilidad",
+            "descripcion": "Definición y separación de GG fijos/variables y Utilidad conforme DS 011-79-VC.",
+            "tipo": "estructura",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "llm_extraction",
+                "requiere": [
+                    "Gastos Generales",
+                    "Utilidad"
+                ]
+            },
+            "evidencia_hint": "Secciones 'COSTOS INDIRECTOS', 'GASTOS GENERALES', 'UTILIDAD'"
+        },
+        {
+            "id": "TRIB-01",
+            "titulo": "IGV 18% del Subtotal",
+            "descripcion": "IGV = 18% del Subtotal (tolerancia de redondeo ±0.5%).",
+            "tipo": "numerica",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "deterministico",
+                "formula": "IGV = round(Subtotal * 0.18, 2)",
+                "tolerancia": 0.5
+            },
+            "evidencia_hint": "Resumen de costos (Subtotal, IGV, Total)"
+        },
+        {
+            "id": "MONEDA-01",
+            "titulo": "Denominación monetaria correcta",
+            "descripcion": "Usar 'S/' (Sol). Evitar 'S/.' (Nuevo Sol).",
+            "tipo": "regex",
+            "severidad": "baja",
+            "verificacion": {
+                "metodo": "regex",
+                "patron_incorrecto": "S/\\.",
+                "patron_correcto": "S/[^.]"
+            },
+            "evidencia_hint": "Sección 'IMPORTANTE' (cambio BCR 2016)"
+        },
+        {
+            "id": "SIST-01",
+            "titulo": "Sistema de contratación coherente",
+            "descripcion": "Definir Suma Alzada, Precios Unitarios o Mixto conforme RLCE y el nivel de definición de magnitudes.",
+            "tipo": "semantica",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'ART. 35 RLCE – Sistemas de contratación'"
+        },
+        {
+            "id": "VR-01",
+            "titulo": "Vigencia del valor referencial",
+            "descripcion": "Antigüedad ≤ 9 meses desde determinación del presupuesto (RLCE).",
+            "tipo": "semantica",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'IMPORTANTE' (art. 34 RLCE)"
+        },
+        {
+            "id": "DOC-01",
+            "titulo": "Listado mínimo de documentos de presupuesto",
+            "descripcion": "Presencia de hoja de consolidado, resúmenes y relaciones por especialidad, APU, GG, fórmulas, cronogramas, curva S, desembolsos, etc.",
+            "tipo": "presencia",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "llm_extraction",
+                "lista_minima": [
+                    "Hoja de consolidado",
+                    "Resumen de metrados",
+                    "APU por especialidad",
+                    "GG y Utilidad",
+                    "Fórmulas polinómicas",
+                    "Cronograma Gantt",
+                    "Cronograma valorizado",
+                    "Curva S",
+                    "Cronograma de desembolsos",
+                    "Presupuesto de Mobiliario y Equipamiento",
+                    "Plan COVID-19 (si aplica)"
+                ]
+            },
+            "evidencia_hint": "Sección 'LISTA DE DOCUMENTOS DEL PRESUPUESTO'"
+        },
+        {
+            "id": "COT-01",
+            "titulo": "Sustento de precios de insumos (cotizaciones)",
+            "descripcion": "Mínimo 3 proveedores, calidad acreditada, activo en SUNAT y apto para contratar con el Estado; lead time declarado.",
+            "tipo": "estructura",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'EVALUACIÓN DE COTIZACIONES Y COMPARATIVOS'"
+        },
+        {
+            "id": "FORM-01",
+            "titulo": "Fórmulas polinómicas válidas",
+            "descripcion": "Sumatoria de coeficientes = 1.000; cada coeficiente > 0.05; agrupación y lista de insumos correctas (DS 011-79-VC).",
+            "tipo": "numerica",
+            "severidad": "alta",
+            "verificacion": {
+                "metodo": "deterministico",
+                "suma": 1.0,
+                "min_coef": 0.05
+            },
+            "evidencia_hint": "Sección 'FÓRMULAS POLINÓMICAS'"
+        },
+        {
+            "id": "PROG-01",
+            "titulo": "Programación por CPM y ruta crítica",
+            "descripcion": "Secuencia lógica, relaciones, frentes/cuadrillas, duración (días calendario) y ruta crítica (CPM).",
+            "tipo": "estructura",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Secciones 'PROGRAMACIÓN DE OBRAS' y 'HERRAMIENTAS Y TÉCNICAS'"
+        },
+        {
+            "id": "PROG-02",
+            "titulo": "Cronograma valorizado coherente (campana de Gauss)",
+            "descripcion": "Distribución similar a campana de Gauss, alineada al Gantt; incluir componentes I–III y gastos de supervisión/liquidación.",
+            "tipo": "semantica",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Secciones 'CRONOGRAMA VALORIZADO' y 'Curva Gauss'"
+        },
+        {
+            "id": "PROG-03",
+            "titulo": "Curva S presente y consistente",
+            "descripcion": "Curva S generada a partir de Gantt/valorizado; interpretación correcta de acumulados.",
+            "tipo": "presencia",
+            "severidad": "baja",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'Curvas de avance (Curva S)'"
+        },
+        {
+            "id": "DESE-01",
+            "titulo": "Cronograma de desembolsos",
+            "descripcion": "Coherente con valorizado; respeta topes de adelantos del RLCE.",
+            "tipo": "semantica",
+            "severidad": "baja",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Sección 'CRONOGRAMA DE DESEMBOLSOS'"
+        },
+        {
+            "id": "CCC-01",
+            "titulo": "Control Concurrente (Ley 31358)",
+            "descripcion": "Si inversión > S/ 10 millones: incluir rubro Control Concurrente hasta 2% del valor total desde F&E.",
+            "tipo": "semantica",
+            "severidad": "media",
+            "verificacion": {
+                "metodo": "llm_extraction"
+            },
+            "evidencia_hint": "Secciones 'COSTO DE CONTROL CONCURRENTE' y 'CONTROL CONCURRENTE DE OBRA'"
+        }
+    ]
+}
