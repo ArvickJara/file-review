@@ -133,7 +133,7 @@ router.post('/evaluar-costos-presupuestos', acceptAnyFile, async (req, res) => {
             tipo: 'costos_presupuestos',
             fecha_creacion: new Date(),
             estado: 'evaluado',
-            usuario_id: req.user?.id || 1
+            /*usuario_id: req.user?.id || 1*/
         });
 
         await db('analisis_expedientes').insert({

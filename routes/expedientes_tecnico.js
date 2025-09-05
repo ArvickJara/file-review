@@ -70,13 +70,13 @@ router.post('/evaluar-expediente-tecnico', acceptAnyFile, async (req, res) => {
         const rulebookTdr = tryLoadTdrRulebook();
         const prompt =
             `Evalúa el EXPEDIENTE TÉCNICO conforme a los TÉRMINOS DE REFERENCIA (TDR).
-            Si hay RULEBOOK_TDR_JSON, úsalo estrictamente.
+                Si hay RULEBOOK_TDR_JSON, úsalo estrictamente.
 
-            Devuelve un informe en texto con:
-            1) Hallazgos por sección del TDR (Objeto, Alcance, Entregables, Metodología, Cronograma, Equipo, Perfiles/Experiencia, Supervisión/Calidad, Presupuesto, Criterios de Evaluación).
-            2) Incumplimientos y omisiones (lista numerada).
-            3) Riesgos que afecten tiempo/costo/calidad.
-            4) Recomendaciones accionables indicando dónde corregir (página/tabla si es posible).`;
+                Devuelve un informe en texto con:
+                1) Hallazgos por sección del TDR (Objeto, Alcance, Entregables, Metodología, Cronograma, Equipo, Perfiles/Experiencia, Supervisión/Calidad, Presupuesto, Criterios de Evaluación).
+                2) Incumplimientos y omisiones (lista numerada).
+                3) Riesgos que afecten tiempo/costo/calidad.
+                4) Recomendaciones accionables indicando dónde corregir (página/tabla si es posible).`;
 
         const resp = await openai.responses.create({
             model: 'gpt-4o-mini',
@@ -103,7 +103,7 @@ router.post('/evaluar-expediente-tecnico', acceptAnyFile, async (req, res) => {
             tipo: 'expediente_tecnico',
             fecha_creacion: new Date(),
             estado: 'evaluado',
-            usuario_id: req.user?.id || 1
+            /* usuario_id: req.user?.id || 1 */
         });
 
         await db('analisis_expedientes').insert({

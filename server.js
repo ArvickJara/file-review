@@ -36,7 +36,7 @@ try {
     process.exit(1);
 }
 
-app.use(express.static(path.join(__dirname, 'fe-eval-ia', 'dist')));
+app.use(express.static(path.join(__dirname, 'fe-expedientes', 'dist')));
 
 // Agregar un manejador 404 simple por ahora
 app.use((req, res) => {
@@ -48,7 +48,6 @@ app.use((req, res) => {
     }
 });
 
-// Conexión a base de datos
 const db = mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
