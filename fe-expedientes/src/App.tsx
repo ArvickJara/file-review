@@ -12,6 +12,7 @@ import NotFound from "./pages/NotFound";
 import logoRegionalLight from "@/assets/logo-region-light.png";
 import logoRegionalDark from "@/assets/logo-region-dark.png";
 import { useState, useEffect } from "react";
+import ExpedientesTecnicosUpload from "./pages/Upload";
 
 const queryClient = new QueryClient();
 
@@ -239,6 +240,7 @@ const App = () => {
                                                         <Route path="/" element={<Index />} />
                                                         <Route path="*" element={<NotFound />} />
                                                         <Route path="/costos-presupuestos" element={<CostosPresupuestos />} />
+                                                        <Route path="/upload" element={<ExpedientesTecnicosUpload />} />
                                                     </Routes>
                                                 </AppLayout>
                                             </FadeIn>

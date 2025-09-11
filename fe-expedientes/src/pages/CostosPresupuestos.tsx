@@ -287,7 +287,7 @@ const FileUpload = ({ apiUrl = `${API_BASE}/api/expedientes/evaluar-costos-presu
                 </CardContent>
             </Card>
 
-            {/* 🔎 Listado de resultados debajo del uploader */}
+            {/* Listado de resultados debajo del uploader */}
             <div className="mt-6">
                 <ResultadosCostos key={reloadKey} />
             </div>

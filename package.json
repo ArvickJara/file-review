@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "child_process": "^1.0.2",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
@@ -26,6 +27,7 @@
     "mysql2": "^3.14.3",
     "openai": "^5.15.0",
     "sonner": "^2.0.6",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "util": "^0.12.5"
   }
 }
