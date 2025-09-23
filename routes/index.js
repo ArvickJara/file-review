@@ -17,6 +17,10 @@ try {
     router.use('/expedientes_tecnicos', expedientesTecnicosRoutes);
     logger.info('Rutas de expedientes técnicos registradas', 'Routes');
 
+    const proyectosRoutes = require('./proyectos');
+    router.use('/proyectos', proyectosRoutes);
+    logger.info('Rutas de proyectos registradas', 'Routes');
+
     // Rutas de auditoría (si existe)
     try {
         const auditRoutes = require('./audit');

@@ -1,9 +1,7 @@
-// routes/expedientes-tecnicos.js
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const OpenAI = require('openai');
 const logger = require('../utils/logger');
 const db = require('../db/knex');
@@ -15,362 +13,354 @@ const execAsync = promisify(exec);
 const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
+// === Multer ===
 const storage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadsDir),
     filename: (_req, file, cb) => {
         const ext = path.extname(file.originalname || '');
         const base = path.basename(file.originalname || 'archivo', ext).slice(0, 100);
         const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        cb(null, `${base}-${unique}${ext || ''}`);
-    }
+        cb(null, `${base.replace(/[^a-zA-Z0-9]/g, '_')}-${unique}${ext || ''}`);
+    },
 });
 
-const upload = multer({
+const uploadTdr = multer({
     storage,
-    fileFilter: (req, file, cb) => {
-        // Solo permitir PDFs para expedientes técnicos
-        if (file.mimetype === 'application/pdf') {
-            cb(null, true);
-        } else {
-            cb(new Error('Solo se permiten archivos PDF para expedientes técnicos'));
-        }
-    }
+    fileFilter: (_req, file, cb) => {
+        const allowed = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ];
+        if (allowed.includes(file.mimetype)) cb(null, true);
+        else cb(new Error('Solo se permiten archivos PDF, DOC y DOCX para TDRs'));
+    },
 });
 
-// === Cliente de OpenAI ===
+const uploadTomos = multer({
+    storage,
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new Error('Solo se permiten archivos PDF para los tomos del expediente'));
+    },
+});
+
+// === OpenAI ===
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MODEL_NAME = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-// === Funciones OCR ===
+// === OCR (solo tomos) ===
 async function processPDFWithOCR(inputPath, outputPath) {
     try {
         const language = process.env.OCR_LANGUAGE || 'spa';
         const command = `ocrmypdf --language ${language} --deskew --clean --optimize 1 "${inputPath}" "${outputPath}"`;
-
-        logger.info(`Ejecutando OCR: ${command}`, 'OCR');
-        const { stdout, stderr } = await execAsync(command);
-
-        if (stderr) {
-            logger.warn(`OCR warnings: ${stderr}`, 'OCR');
-        }
-
-        logger.info(`OCR completado exitosamente para: ${path.basename(inputPath)}`, 'OCR');
-        return true;
+        await execAsync(command);
     } catch (error) {
-        logger.error(`Error en OCR: ${error.message}`, 'OCR');
         throw new Error(`Fallo en procesamiento OCR: ${error.message}`);
     }
 }
-
 async function extractTextFromPDF(pdfPath) {
     try {
         const command = `pdftotext "${pdfPath}" -`;
         const { stdout } = await execAsync(command);
         return stdout;
-    } catch (error) {
-        logger.error(`Error extrayendo texto: ${error.message}`, 'ExtractText');
-        throw new Error(`Fallo extrayendo texto: ${error.message}`);
+    } catch (_e) {
+        return '';
     }
 }
 
-// === RUTA: Subir TDR (Términos de Referencia) ===
-router.post('/subir-tdr', upload.single('tdr'), async (req, res) => {
+// === Assistants utils (TDR) ===
+let assistantIdCache = process.env.OPENAI_TDR_ASSISTANT_ID || null;
+
+async function getTdrAssistantId() {
+    if (assistantIdCache) return assistantIdCache;
+    const assistant = await openai.beta.assistants.create({
+        name: 'Extractor de TDR',
+        model: process.env.OPENAI_ASSISTANT_MODEL || 'gpt-4o-mini',
+        tools: [{ type: 'file_search' }],
+        instructions:
+            'Eres un asistente experto en extraer datos de TDR/Expedientes. Responde únicamente en JSON con este esquema: { "nombre_proyecto": string|null, "codigo_proyecto": string|null, "entidad_ejecutora": string|null, "monto_referencial": number|null, "descripcion": string|null }. No incluyas texto adicional.',
+    });
+    assistantIdCache = assistant.id;
+    logger.info(`Assistant TDR creado: ${assistantIdCache}`, 'TDRAssistant');
+    return assistantIdCache;
+}
+
+// === Compat helpers (SDK viejo/nuevo) ===
+async function createRunCompat(assistantId, threadId) {
     try {
+        return await openai.beta.threads.runs.create({ assistant_id: assistantId, thread_id: threadId });
+    } catch (_e) {
+        return await openai.beta.threads.runs.create(threadId, { assistant_id: assistantId });
+    }
+}
+async function listRunsCompat(threadId, options = {}) {
+    try {
+        return await openai.beta.threads.runs.list({ thread_id: threadId, ...options });
+    } catch (_e) {
+        return await openai.beta.threads.runs.list(threadId, options);
+    }
+}
+async function listMessagesCompat(threadId, options = {}) {
+    try {
+        return await openai.beta.threads.messages.list({ thread_id: threadId, ...options });
+    } catch (_e) {
+        return await openai.beta.threads.messages.list(threadId, options);
+    }
+}
+async function createMessageCompat(threadId, payload) {
+    try {
+        return await openai.beta.threads.messages.create({ thread_id: threadId, ...payload });
+    } catch (_e) {
+        return await openai.beta.threads.messages.create(threadId, payload);
+    }
+}
 
-        const { proyecto_id } = req.body;
+// Espera del run (polling vía list, evita retrieve con path de 2 segmentos)
+async function waitForRun(run, fallbackThreadId, timeoutMs = 300000) {
+    const threadId = run?.thread_id || fallbackThreadId;
+    const runId = run?.id || run?.run_id;
+    if (!threadId || !runId) {
+        throw new Error(`IDs inválidos para polling. threadId=${threadId} runId=${runId}`);
+    }
 
-        if (!req.file || !proyecto_id) {
-            return res.status(400).json({
-                success: false,
-                message: 'Se requiere archivo TDR y ID del proyecto'
-            });
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+        const page = await listRunsCompat(threadId, { order: 'desc', limit: 20 });
+        const current = page?.data?.find(r => r.id === runId || r.run_id === runId);
+        if (current) {
+            if (current.status === 'completed') return current;
+            if (['failed', 'cancelled', 'expired'].includes(current.status)) {
+                throw new Error(`Run terminó con estado: ${current.status}`);
+            }
         }
+        await new Promise(r => setTimeout(r, 1500));
+    }
+    throw new Error('Timeout esperando respuesta del Assistant');
+}
 
+async function extractProjectDataFromFile(filePath, originalName) {
+    // 1) Subir archivo
+    const uploaded = await openai.files.create({
+        file: fs.createReadStream(filePath),
+        purpose: 'assistants',
+    });
+
+    // 2) Assistant y thread
+    const assistantId = await getTdrAssistantId();
+    const thread = await openai.beta.threads.create();
+    if (!thread?.id) throw new Error('No se obtuvo thread.id');
+
+    // 3) Mensaje con adjunto
+    await createMessageCompat(thread.id, {
+        role: 'user',
+        content:
+            'Analiza el documento adjunto (TDR) y extrae JSON con el siguiente esquema exacto: ' +
+            '{ "nombre_proyecto": string|null, "codigo_proyecto": string|null, "entidad_ejecutora": string|null, "monto_referencial": number|null, "descripcion": string|null }. ' +
+            'Devuelve solo JSON válido.',
+        attachments: [{ file_id: uploaded.id, tools: [{ type: 'file_search' }] }],
+    });
+
+    // 4) Ejecutar run (compat)
+    const run = await createRunCompat(assistantId, thread.id);
+    logger.info(`Assistant=${assistantId} thread=${thread.id} run=${run?.id}`, 'SubirTDR');
+
+    // 5) Esperar (con respaldo de thread.id)
+    await waitForRun(run, thread.id);
+
+    // 6) Leer mensajes (compat)
+    const messages = await listMessagesCompat(thread.id, { order: 'desc', limit: 5 });
+    const assistantMessage = messages.data.find(m => m.role === 'assistant');
+    if (!assistantMessage) throw new Error('No se obtuvo respuesta del Assistant');
+
+    const textParts = assistantMessage.content
+        .filter(c => c.type === 'text' && c.text?.value)
+        .map(c => c.text.value)
+        .join('\n');
+    if (!textParts) throw new Error('Respuesta vacía del Assistant');
+
+    let data;
+    try { data = JSON.parse(textParts); }
+    catch { data = JSON.parse(textParts.replace(/```json|```/g, '').trim()); }
+
+    const monto = data?.monto_referencial;
+    const montoNum = typeof monto === 'number' ? monto : parseFloat(String(monto || '').replace(/[^0-9.]/g, ''));
+    return {
+        nombre_proyecto: data?.nombre_proyecto ?? null,
+        codigo_proyecto: data?.codigo_proyecto ?? null,
+        entidad_ejecutora: data?.entidad_ejecutora ?? null,
+        monto_referencial: isNaN(montoNum) ? null : montoNum,
+        descripcion: data?.descripcion ?? null,
+        _raw: data,
+    };
+}
+
+// === RUTA: Subir TDR (Crea o actualiza proyecto) ===
+router.post('/subir-tdr', uploadTdr.single('tdr'), async (req, res) => {
+    try {
+        let { proyecto_id } = req.body;
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No se ha subido el archivo TDR' });
         }
 
         const originalPath = path.join(uploadsDir, req.file.filename);
-        const ocrPath = path.join(uploadsDir, `ocr_${req.file.filename}`);
 
-        logger.info(`Procesando TDR: ${req.file.filename}`, 'SubirTDR');
-
-        // Procesar con OCR
+        // IA: extraer datos del TDR
+        let extracted = null;
         try {
-            await processPDFWithOCR(originalPath, ocrPath);
-        } catch (ocrError) {
-            logger.warn(`OCR falló para TDR, usando archivo original: ${ocrError.message}`, 'SubirTDR');
-            fs.copyFileSync(originalPath, ocrPath);
+            extracted = await extractProjectDataFromFile(originalPath, req.file.originalname);
+            logger.info(`Datos extraídos por IA: ${JSON.stringify(extracted?._raw || extracted)}`, 'SubirTDR');
+        } catch (iaErr) {
+            logger.warn(`Fallo extracción por IA: ${iaErr.message}`, 'SubirTDR');
         }
 
-        // Extraer texto
-        const extractedText = await extractTextFromPDF(ocrPath);
-
-        if (!extractedText || extractedText.trim().length < 100) {
-            return res.status(400).json({
-                success: false,
-                message: 'No se pudo extraer suficiente texto del TDR'
+        // Crear o actualizar proyecto
+        if (!proyecto_id) {
+            proyecto_id = Date.now().toString();
+            await db('proyectos').insert({
+                id: proyecto_id,
+                nombre: extracted?.nombre_proyecto || `Proyecto - ${req.file.originalname.slice(0, 50)}`,
+                tipo: 'expediente_tecnico',
+                estado: 'activo',
+                codigo_proyecto: extracted?.codigo_proyecto || null,
+                entidad_ejecutora: extracted?.entidad_ejecutora || null,
+                monto_referencial: extracted?.monto_referencial ?? null,
+                descripcion: extracted?.descripcion || null,
+                datos_extraidos: !!extracted,
+            });
+            logger.info(`Nuevo proyecto creado con ID: ${proyecto_id}`, 'SubirTDR');
+        } else if (extracted) {
+            await db('proyectos').where('id', proyecto_id).update({
+                nombre: extracted.nombre_proyecto || undefined,
+                codigo_proyecto: extracted.codigo_proyecto || undefined,
+                entidad_ejecutora: extracted.entidad_ejecutora || undefined,
+                monto_referencial: extracted.monto_referencial ?? undefined,
+                descripcion: extracted.descripcion || undefined,
+                datos_extraidos: true,
             });
         }
 
-        const tdrId = Date.now().toString();
-
-        // Guardar TDR
-        await db('tdr_documentos').insert({
-            id: tdrId,
+        // Registrar el TDR como documento (orden 0)
+        const tdrDocumentId = Date.now().toString();
+        await db('documentos').insert({
+            id: tdrDocumentId,
             proyecto_id,
-            nombre: req.file.originalname,
+            nombre_archivo: req.file.originalname,
             ruta_archivo: req.file.filename,
-            contenido_texto: extractedText,
-            fecha_creacion: new Date(),
-            estado: 'activo'
+            estado: 'pendiente',
+            orden: 0,
         });
-
-        // Limpiar archivo temporal
-        try {
-            if (fs.existsSync(ocrPath) && ocrPath !== originalPath) {
-                fs.unlinkSync(ocrPath);
-            }
-        } catch (e) {
-            logger.warn(`No se pudo eliminar archivo temporal OCR: ${e.message}`, 'Cleanup');
-        }
 
         return res.status(200).json({
             success: true,
-            tdrId,
-            file: { name: req.file.originalname, path: `/uploads/${req.file.filename}` },
-            extractedTextLength: extractedText.length,
-            message: 'TDR subido y procesado exitosamente'
+            proyectoId: proyecto_id,
+            message: 'TDR enviado a IA y proyecto creado/actualizado exitosamente.',
         });
-
     } catch (error) {
         logger.error(`Error al procesar TDR: ${error.message}`, 'SubirTDR');
-        return res.status(500).json({
-            success: false,
-            message: 'Error al procesar el TDR',
-            error: error.message
-        });
+        return res.status(500).json({ success: false, message: 'Error interno al procesar el TDR', error: error.message });
     }
 });
 
-// === RUTA: Subir múltiples tomos del expediente técnico ===
-router.post('/evaluar-expediente', upload.array('tomos', 10), async (req, res) => {
+// === RUTA: Subir y evaluar tomos (OCR + Chat) ===
+router.post('/evaluar-expediente', uploadTomos.array('tomos', 10), async (req, res) => {
     try {
-        const { tdrId } = req.body;
+        const { proyecto_id } = req.body;
+        if (!proyecto_id) return res.status(400).json({ success: false, message: 'Se requiere el ID del Proyecto' });
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, message: 'No se han subido tomos del expediente' });
 
-        if (!tdrId) {
-            return res.status(400).json({ success: false, message: 'Se requiere el ID del TDR' });
-        }
-
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ success: false, message: 'No se han subido tomos del expediente' });
-        }
-
-        // Obtener el TDR de referencia
-        const tdr = await db('tdr_documentos').where('id', tdrId).first();
-        if (!tdr) {
-            return res.status(404).json({ success: false, message: 'TDR no encontrado' });
-        }
-
-        const expedienteId = Date.now().toString();
+        await db('proyectos').where('id', proyecto_id).update({ estado: 'en_progreso' });
         const resultados = [];
 
         for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
             const tomoNumero = i + 1;
+            const documentoId = `${Date.now()}-${i}`;
 
-            logger.info(`Procesando tomo ${tomoNumero}: ${file.filename}`, 'EvaluarExpediente');
+            await db('documentos').insert({
+                id: documentoId,
+                proyecto_id,
+                nombre_archivo: file.originalname,
+                ruta_archivo: file.filename,
+                orden: tomoNumero,
+                estado: 'procesando',
+            });
 
             try {
                 const originalPath = path.join(uploadsDir, file.filename);
                 const ocrPath = path.join(uploadsDir, `ocr_${file.filename}`);
-
-                // Procesar con OCR
-                try {
-                    await processPDFWithOCR(originalPath, ocrPath);
-                } catch (ocrError) {
-                    logger.warn(`OCR falló para tomo ${tomoNumero}, usando archivo original`, 'EvaluarExpediente');
-                    fs.copyFileSync(originalPath, ocrPath);
-                }
-
-                // Extraer texto
+                await processPDFWithOCR(originalPath, ocrPath);
                 const extractedText = await extractTextFromPDF(ocrPath);
+                if (fs.existsSync(ocrPath)) fs.unlinkSync(ocrPath);
 
-                if (!extractedText || extractedText.trim().length < 100) {
-                    resultados.push({
-                        tomo: tomoNumero,
-                        archivo: file.originalname,
-                        error: 'No se pudo extraer suficiente texto del documento'
-                    });
-                    continue;
-                }
+                if (!extractedText || extractedText.trim().length < 100)
+                    throw new Error('No se pudo extraer suficiente texto del documento');
 
-                // Construir prompt para evaluación contra TDR
-                const prompt = `
-Evalúa este TOMO ${tomoNumero} del expediente técnico contra los TÉRMINOS DE REFERENCIA (TDR) proporcionados.
-
-Analiza específicamente:
-1) CUMPLIMIENTO DE ESPECIFICACIONES TÉCNICAS del TDR
-2) DOCUMENTACIÓN REQUERIDA según el TDR
-3) ASPECTOS FALTANTES o INCONSISTENCIAS con el TDR
-4) CALIDAD Y COMPLETITUD de la información presentada
-
-Para cada observación indica:
-- Sección/capítulo del TDR que aplica
-- Descripción del hallazgo
-- Nivel de conformidad (CONFORME/NO CONFORME/OBSERVACIÓN)
-- Recomendación específica
-
-CONTENIDO DEL TOMO ${tomoNumero}:
-${extractedText.substring(0, 6000)} ${extractedText.length > 6000 ? '...(texto truncado)' : ''}
-                `;
-
-                // Enviar a OpenAI
+                const prompt = `Evalúa el siguiente tomo de un expediente técnico y resume sus puntos clave.`;
                 const response = await openai.chat.completions.create({
                     model: MODEL_NAME,
-                    messages: [
-                        {
-                            role: "system",
-                            content: "Eres un auditor especializado en expedientes técnicos de obras públicas. Evalúa cada tomo contra los TDR de referencia."
-                        },
-                        {
-                            role: "user",
-                            content: `${prompt}\n\nTÉRMINOS DE REFERENCIA (TDR):\n${tdr.contenido_texto.substring(0, 4000)}`
-                        }
-                    ],
-                    temperature: 0.2,
-                    max_tokens: 3000
+                    messages: [{ role: 'user', content: `${prompt}\n\nTOMO:\n${extractedText.substring(0, 8000)}` }],
                 });
-
                 const analysis = response.choices[0].message.content;
 
-                // Guardar análisis del tomo
-                const tomoId = `${expedienteId}_tomo_${tomoNumero}`;
-                await db('analisis_tomos').insert({
-                    id: tomoId,
-                    expediente_id: expedienteId,
-                    tdr_id: tdrId,
-                    tomo_numero: tomoNumero,
-                    nombre_archivo: file.originalname,
-                    ruta_archivo: file.filename,
-                    contenido_analisis: analysis,
-                    fecha_analisis: new Date(),
-                    modelo_ia: MODEL_NAME
+                await db('analisis').insert({
+                    documento_id: documentoId,
+                    contenido: analysis,
+                    modelo_ia: MODEL_NAME,
                 });
-
-                resultados.push({
-                    tomo: tomoNumero,
-                    archivo: file.originalname,
-                    analisis: analysis,
-                    extractedTextLength: extractedText.length
-                });
-
-                // Limpiar archivo temporal
-                try {
-                    if (fs.existsSync(ocrPath) && ocrPath !== originalPath) {
-                        fs.unlinkSync(ocrPath);
-                    }
-                } catch (e) {
-                    logger.warn(`No se pudo eliminar archivo temporal OCR para tomo ${tomoNumero}`, 'Cleanup');
-                }
-
+                await db('documentos').where('id', documentoId).update({ estado: 'analizado' });
+                resultados.push({ tomo: tomoNumero, archivo: file.originalname, status: 'exitoso' });
             } catch (tomoError) {
-                logger.error(`Error procesando tomo ${tomoNumero}: ${tomoError.message}`, 'EvaluarExpediente');
-                resultados.push({
-                    tomo: tomoNumero,
-                    archivo: file.originalname,
-                    error: tomoError.message
-                });
+                await db('documentos').where('id', documentoId).update({ estado: 'error' });
+                resultados.push({ tomo: tomoNumero, archivo: file.originalname, error: tomoError.message });
             }
         }
 
-        // Guardar expediente principal
-        await db('expedientes_tecnicos').insert({
-            id: expedienteId,
-            tdr_id: tdrId,
-            total_tomos: req.files.length,
-            fecha_creacion: new Date(),
-            estado: 'evaluado'
-        });
-
-        // Generar resumen consolidado
-        const tomosExitosos = resultados.filter(r => !r.error);
-        const tomosConError = resultados.filter(r => r.error);
-
-        return res.status(200).json({
-            success: true,
-            expedienteId,
-            tdr: { id: tdrId, nombre: tdr.nombre },
-            resumen: {
-                total_tomos: req.files.length,
-                tomos_procesados_exitosamente: tomosExitosos.length,
-                tomos_con_errores: tomosConError.length
-            },
-            resultados,
-            message: 'Expediente técnico evaluado exitosamente'
-        });
-
+        await db('proyectos').where('id', proyecto_id).update({ estado: 'evaluado' });
+        return res.status(200).json({ success: true, proyectoId: proyecto_id, resultados });
     } catch (error) {
-        logger.error(`Error al evaluar expediente técnico: ${error.message}`, 'EvaluarExpediente');
-        return res.status(500).json({
-            success: false,
-            message: 'Error al evaluar el expediente técnico',
-            error: error.message
-        });
+        logger.error(`Error al evaluar expediente: ${error.message}`, 'EvaluarExpediente');
+        return res.status(500).json({ success: false, message: 'Error al evaluar el expediente', error: error.message });
     }
 });
 
-// === RUTA: Listar TDRs disponibles ===
-router.get('/tdrs', async (req, res) => {
+// === RUTAS GET ===
+router.get(['/tdrs/:proyecto_id', '/documentos/:proyecto_id'], async (req, res) => {
     try {
-        const tdrs = await db('tdr_documentos')
-            .select('id', 'nombre', 'fecha_creacion', 'estado')
-            .where('estado', 'activo')
-            .orderBy('fecha_creacion', 'desc');
-
-        return res.status(200).json({ success: true, tdrs });
+        const { proyecto_id } = req.params;
+        const documentos = await db('documentos')
+            .select('id', 'nombre_archivo as nombre', 'fecha_subida as fecha_creacion', 'estado', 'orden')
+            .where('proyecto_id', proyecto_id)
+            .orderBy('orden', 'asc');
+        return res.status(200).json({ success: true, documentos });
     } catch (error) {
-        logger.error(`Error al listar TDRs: ${error.message}`, 'ListarTDRs');
-        return res.status(500).json({
-            success: false,
-            message: 'Error al listar TDRs',
-            error: error.message
-        });
+        logger.error(`Error al listar documentos: ${error.message}`, 'ListarDocumentos');
+        return res.status(500).json({ success: false, message: 'Error al listar documentos', error: error.message });
     }
 });
 
-// === RUTA: Obtener expediente técnico por ID ===
 router.get('/:id', async (req, res) => {
     try {
-        const expediente = await db('expedientes_tecnicos')
-            .join('tdr_documentos', 'expedientes_tecnicos.tdr_id', 'tdr_documentos.id')
+        const proyecto = await db('proyectos').where('id', req.params.id).first();
+        if (!proyecto) return res.status(404).json({ success: false, message: 'Proyecto no encontrado' });
+
+        const documentos = await db('documentos')
+            .leftJoin('analisis', 'documentos.id', 'analisis.documento_id')
             .select(
-                'expedientes_tecnicos.*',
-                'tdr_documentos.nombre as tdr_nombre'
+                'documentos.id',
+                'documentos.nombre_archivo',
+                'documentos.estado',
+                'documentos.orden',
+                'analisis.contenido as analisis_contenido',
+                'analisis.fecha_analisis'
             )
-            .where('expedientes_tecnicos.id', req.params.id)
-            .first();
+            .where('documentos.proyecto_id', req.params.id)
+            .orderBy('documentos.orden', 'asc');
 
-        if (!expediente) {
-            return res.status(404).json({ success: false, message: 'Expediente técnico no encontrado' });
-        }
-
-        const analisisTomos = await db('analisis_tomos')
-            .where('expediente_id', req.params.id)
-            .orderBy('tomo_numero');
-
-        return res.status(200).json({
-            success: true,
-            expediente,
-            analisisTomos
-        });
+        return res.status(200).json({ success: true, proyecto, documentos });
     } catch (error) {
-        logger.error(`Error al obtener expediente técnico: ${error.message}`, 'GetExpedienteTecnico');
-        return res.status(500).json({
-            success: false,
-            message: 'Error al obtener el expediente técnico',
-            error: error.message
-        });
+        logger.error(`Error al obtener expediente: ${error.message}`, 'GetExpediente');
+        return res.status(500).json({ success: false, message: 'Error al obtener el expediente', error: error.message });
     }
 });
 

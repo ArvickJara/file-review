@@ -10,6 +10,13 @@ export default defineConfig({
         },
     },
     server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:5000', // Asumiendo que tu backend corre en el puerto 5000
+                changeOrigin: true,
+                secure: false,
+            },
+        },
         allowedHosts: [
             'c1219b9dfdae.ngrok-free.app'
         ]
