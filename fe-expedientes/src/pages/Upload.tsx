@@ -1,9 +1,9 @@
-// src/pages/Upload.tsx
 import React, { useState, useEffect } from 'react';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2, X, Plus, FolderOpen, Calendar, Building } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
-
+const SELECTED_PROYECTO_KEY = 'selectedProyectoId'; // clave de localStorage
 
 interface Proyecto {
     id: string;
@@ -22,6 +22,7 @@ interface TDR {
     fecha_creacion: string;
     estado: string;
     proyecto_id: string;
+    orden?: number;
 }
 
 interface UploadResult {
@@ -30,10 +31,7 @@ interface UploadResult {
     tdrId?: string;
     expedienteId?: string;
     proyectoId?: string;
-    file?: {
-        name: string;
-        path: string;
-    };
+    file?: { name: string; path: string };
     extractedTextLength?: number;
     projectDataExtracted?: {
         nombre_proyecto?: string;
@@ -44,39 +42,23 @@ interface UploadResult {
         ubicacion?: string;
         plazo_ejecucion?: string;
     };
-    resumen?: {
-        total_tomos: number;
-        tomos_procesados_exitosamente: number;
-        tomos_con_errores: number;
-    };
-    resultados?: Array<{
-        tomo: number;
-        archivo: string;
-        analisis?: string;
-        error?: string;
-    }>;
+    resumen?: { total_tomos: number; tomos_procesados_exitosamente: number; tomos_con_errores: number };
+    resultados?: Array<{ tomo: number; archivo: string; analisis?: string; error?: string }>;
 }
 
-// Componente para mostrar un proyecto en la lista
+// Tarjeta de proyecto
 const ProjectCard: React.FC<{
     proyecto: Proyecto;
     isSelected: boolean;
     onClick: () => void;
 }> = ({ proyecto, isSelected, onClick }) => {
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('es-ES', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-        });
-    };
+    const formatDate = (dateString: string) =>
+        new Date(dateString).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
     return (
         <div
             onClick={onClick}
-            className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${isSelected
-                ? 'border-blue-500 bg-blue-50 shadow-md'
-                : 'border-gray-200 bg-white hover:border-gray-300'
+            className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${isSelected ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
         >
             <div className="flex items-start justify-between">
@@ -106,21 +88,17 @@ const ProjectCard: React.FC<{
 
                     <div className="flex items-center space-x-1">
                         <Calendar className="h-3 w-3 text-gray-400" />
-                        <span className="text-xs text-gray-500">
-                            Creado {formatDate(proyecto.fecha_creacion)}
-                        </span>
+                        <span className="text-xs text-gray-500">Creado {formatDate(proyecto.fecha_creacion)}</span>
                     </div>
                 </div>
 
-                {isSelected && (
-                    <CheckCircle className="h-5 w-5 text-blue-600 flex-shrink-0" />
-                )}
+                {isSelected && <CheckCircle className="h-5 w-5 text-blue-600 flex-shrink-0" />}
             </div>
         </div>
     );
 };
 
-// Componente para crear nuevo proyecto
+// Tarjeta para crear nuevo proyecto
 const NewProjectCard: React.FC<{
     onClick: () => void;
     isCreating: boolean;
@@ -153,15 +131,16 @@ const NewProjectCard: React.FC<{
 };
 
 const ExpedientesTecnicosUpload: React.FC = () => {
-    // Estados para proyectos
+    // Proyectos
     const [selectedProyecto, setSelectedProyecto] = useState<string>('');
     const [availableProyectos, setAvailableProyectos] = useState<Proyecto[]>([]);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [showNewProjectForm, setShowNewProjectForm] = useState(false);
 
-    // Estados existentes
+    // Estados de TDR/Tomos
     const [selectedTdr, setSelectedTdr] = useState<string>('');
     const [availableTdrs, setAvailableTdrs] = useState<TDR[]>([]);
+    const [availableTomos, setAvailableTomos] = useState<TDR[]>([]);
     const [tdrFile, setTdrFile] = useState<File | null>(null);
     const [tomoFiles, setTomoFiles] = useState<File[]>([]);
     const [isUploadingTdr, setIsUploadingTdr] = useState(false);
@@ -170,18 +149,36 @@ const ExpedientesTecnicosUpload: React.FC = () => {
     const [evaluationResult, setEvaluationResult] = useState<UploadResult | null>(null);
     const [activeTab, setActiveTab] = useState<'tdr' | 'expediente'>('tdr');
 
-    // Cargar proyectos al montar el componente
+    // Restaurar selección desde localStorage y cargar proyectos
     useEffect(() => {
+        const saved = localStorage.getItem(SELECTED_PROYECTO_KEY) || '';
+        if (saved) setSelectedProyecto(saved);
         loadAvailableProyectos();
     }, []);
 
-    // Cargar TDRs cuando cambie el proyecto seleccionado
+    // Persistir selección en localStorage
+    useEffect(() => {
+        if (selectedProyecto) localStorage.setItem(SELECTED_PROYECTO_KEY, selectedProyecto);
+        else localStorage.removeItem(SELECTED_PROYECTO_KEY);
+    }, [selectedProyecto]);
+
+    // Validar que el proyecto seleccionado exista; si no, limpiar selección
+    useEffect(() => {
+        if (!availableProyectos.length) return;
+        if (selectedProyecto && !availableProyectos.some((p) => p.id === selectedProyecto)) {
+            setSelectedProyecto('');
+        }
+    }, [availableProyectos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Al cambiar de proyecto, cargar TDRs y Tomos
     useEffect(() => {
         if (selectedProyecto && !showNewProjectForm) {
             loadAvailableTdrs();
-            setSelectedTdr(''); // Limpiar TDR seleccionado
+            loadAvailableTomos();
+            setSelectedTdr('');
         } else {
             setAvailableTdrs([]);
+            setAvailableTomos([]);
         }
     }, [selectedProyecto, showNewProjectForm]);
 
@@ -197,124 +194,122 @@ const ExpedientesTecnicosUpload: React.FC = () => {
         }
     };
 
+    // Solo tomos (orden > 0)
+    const loadAvailableTomos = async () => {
+        if (!selectedProyecto) return;
+        try {
+            const response = await fetch(`${API_BASE}/api/expedientes_tecnicos/documentos/${selectedProyecto}`);
+            if (response.ok) {
+                const data = await response.json();
+                const tomos: TDR[] = (data.documentos || []).filter((d: TDR) => (d.orden ?? 0) > 0);
+                setAvailableTomos(tomos);
+            }
+        } catch (error) {
+            console.error('Error cargando tomos:', error);
+        }
+    };
+
+    // Solo TDRs (orden = 0)
     const loadAvailableTdrs = async () => {
         if (!selectedProyecto) return;
-
         try {
             const response = await fetch(`${API_BASE}/api/expedientes_tecnicos/tdrs/${selectedProyecto}`);
             if (response.ok) {
                 const data = await response.json();
-                setAvailableTdrs(data.tdrs || []);
+                const tdrs: TDR[] = data.tdrs || [];
+                setAvailableTdrs(tdrs);
+                if (!selectedTdr && tdrs.length > 0) setSelectedTdr(tdrs[0].id);
             }
         } catch (error) {
             console.error('Error cargando TDRs:', error);
         }
     };
 
-    // Crear nuevo proyecto subiendo TDR directamente
+    // Crear nuevo proyecto subiendo TDR
     const handleCreateNewProject = () => {
         setShowNewProjectForm(true);
-        setSelectedProyecto(''); // Limpiar selección actual
+        setActiveTab('tdr');
+        setSelectedProyecto(''); // limpiar selección y localStorage
     };
 
-    // Validar tipo de archivo TDR
+    // Validar archivo TDR
     const isValidTdrFile = (file: File) => {
         const validTypes = [
             'application/pdf',
             'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         ];
         return validTypes.includes(file.type);
     };
 
-    // Subir TDR (puede crear proyecto nuevo o agregarlo a existente)
+    // Subir TDR (crea o adjunta al proyecto)
     const handleTdrUpload = async () => {
         if (!tdrFile) return;
 
         if (!isValidTdrFile(tdrFile)) {
-            setTdrResult({
-                success: false,
-                message: 'Solo se permiten archivos PDF, DOC y DOCX para TDR'
-            });
+            setTdrResult({ success: false, message: 'Solo se permiten archivos PDF, DOC y DOCX para TDR' });
             return;
         }
 
         setIsUploadingTdr(true);
         setTdrResult(null);
 
-        // Si estamos creando un proyecto nuevo
-        if (showNewProjectForm) {
-            setIsCreatingProject(true);
-        }
+        if (showNewProjectForm) setIsCreatingProject(true);
 
         try {
             const formData = new FormData();
             formData.append('tdr', tdrFile);
+            if (selectedProyecto) formData.append('proyecto_id', selectedProyecto);
 
-            // Si hay proyecto seleccionado, lo incluimos. Si no, se creará uno nuevo
-            if (selectedProyecto) {
-                formData.append('proyecto_id', selectedProyecto);
-            }
-
-            const response = await fetch(`${API_BASE}/api/expedientes_tecnicos/subir-tdr`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            const result = await response.json();
+            const resp = await fetch(`${API_BASE}/api/expedientes_tecnicos/subir-tdr`, { method: 'POST', body: formData });
+            const result: UploadResult = await resp.json();
             setTdrResult(result);
 
             if (result.success) {
-                // Si se creó un proyecto nuevo, seleccionarlo
-                if (result.proyectoId) {
-                    setSelectedProyecto(result.proyectoId);
-                }
+                // Seleccionar proyecto y TDR devueltos por el backend
+                const proyectoId = result.proyectoId || selectedProyecto;
+                if (proyectoId) setSelectedProyecto(proyectoId); // se persiste por useEffect
 
-                // Recargar listas
                 await loadAvailableProyectos();
-                if (selectedProyecto || result.proyectoId) {
-                    await loadAvailableTdrs();
-                }
-                setSelectedTdr(result.tdrId);
+                await loadAvailableTdrs();
+                await loadAvailableTomos();
+
+                if (result.tdrId) setSelectedTdr(result.tdrId);
+
+                // Limpiar y cambiar de pestaña
                 setTdrFile(null);
                 setShowNewProjectForm(false);
-
-                // Cambiar a la pestaña de expediente
                 setActiveTab('expediente');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         } catch (error) {
-            setTdrResult({
-                success: false,
-                message: 'Error de conexión al subir TDR'
-            });
+            setTdrResult({ success: false, message: 'Error de conexión al subir TDR' });
         } finally {
             setIsUploadingTdr(false);
             setIsCreatingProject(false);
         }
     };
 
-    // Agregar tomo (solo PDF para OCR)
+    // Agregar tomos (solo PDF)
     const handleAddTomo = (files: FileList | null) => {
-        if (files) {
-            const validFiles = Array.from(files).filter(file => file.type === 'application/pdf');
-            const invalidFiles = Array.from(files).filter(file => file.type !== 'application/pdf');
+        if (!files) return;
+        const validFiles = Array.from(files).filter((f) => f.type === 'application/pdf');
+        const invalidFiles = Array.from(files).filter((f) => f.type !== 'application/pdf');
 
-            if (invalidFiles.length > 0) {
-                alert(`Se omitieron ${invalidFiles.length} archivo(s) que no son PDF. Los tomos deben ser archivos PDF escaneados.`);
-            }
+        if (invalidFiles.length > 0) {
+            alert(`Se omitieron ${invalidFiles.length} archivo(s) que no son PDF. Los tomos deben ser archivos PDF escaneados.`);
+        }
 
-            if (validFiles.length > 0) {
-                setTomoFiles(prev => [...prev, ...validFiles]);
-            }
+        if (validFiles.length > 0) {
+            setTomoFiles((prev) => [...prev, ...validFiles]);
         }
     };
 
-    // Remover tomo
     const handleRemoveTomo = (index: number) => {
-        setTomoFiles(prev => prev.filter((_, i) => i !== index));
+        setTomoFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
-    // Evaluar expediente
+    // Evaluar expediente (subir tomos)
     const handleEvaluateExpediente = async () => {
         if (!selectedTdr || !selectedProyecto || tomoFiles.length === 0) return;
 
@@ -325,27 +320,18 @@ const ExpedientesTecnicosUpload: React.FC = () => {
             const formData = new FormData();
             formData.append('tdrId', selectedTdr);
             formData.append('proyecto_id', selectedProyecto);
+            tomoFiles.forEach((file) => formData.append('tomos', file));
 
-            tomoFiles.forEach((file) => {
-                formData.append('tomos', file);
-            });
-
-            const response = await fetch(`${API_BASE}/api/expedientes-tecnicos/evaluar-expediente`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            const result = await response.json();
+            const resp = await fetch(`${API_BASE}/api/expedientes_tecnicos/evaluar-expediente`, { method: 'POST', body: formData });
+            const result: UploadResult = await resp.json();
             setEvaluationResult(result);
 
             if (result.success) {
                 setTomoFiles([]);
+                await loadAvailableTomos(); // refrescar lista de tomos existentes
             }
         } catch (error) {
-            setEvaluationResult({
-                success: false,
-                message: 'Error de conexión al evaluar expediente'
-            });
+            setEvaluationResult({ success: false, message: 'Error de conexión al evaluar expediente' });
         } finally {
             setIsEvaluating(false);
         }
@@ -363,39 +349,29 @@ const ExpedientesTecnicosUpload: React.FC = () => {
         <div className="max-w-7xl mx-auto p-6 space-y-6">
             {/* Header */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                    Evaluación de Expedientes Técnicos
-                </h1>
-                <p className="text-gray-600">
-                    Selecciona un proyecto existente o crea uno nuevo subiendo un TDR
-                </p>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">Evaluación de Expedientes Técnicos</h1>
+                <p className="text-gray-600">Selecciona un proyecto existente o crea uno nuevo subiendo un TDR</p>
             </div>
 
             {/* Lista de proyectos */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-medium text-gray-900 mb-4">
-                    Proyectos
-                </h2>
+                <h2 className="text-lg font-medium text-gray-900 mb-4">Proyectos</h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Proyectos existentes */}
                     {availableProyectos.map((proyecto) => (
                         <ProjectCard
                             key={proyecto.id}
                             proyecto={proyecto}
                             isSelected={selectedProyecto === proyecto.id && !showNewProjectForm}
                             onClick={() => {
-                                setSelectedProyecto(proyecto.id);
+                                setSelectedProyecto(proyecto.id); // se persiste por useEffect
                                 setShowNewProjectForm(false);
+                                setActiveTab('tdr'); // volver a TDR al cambiar de proyecto
                             }}
                         />
                     ))}
 
-                    {/* Botón para crear nuevo proyecto */}
-                    <NewProjectCard
-                        onClick={handleCreateNewProject}
-                        isCreating={isCreatingProject}
-                    />
+                    <NewProjectCard onClick={handleCreateNewProject} isCreating={isCreatingProject} />
                 </div>
             </div>
 
@@ -403,13 +379,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
             {showNewProjectForm && (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-medium text-gray-900">
-                            Crear Nuevo Proyecto
-                        </h2>
-                        <button
-                            onClick={() => setShowNewProjectForm(false)}
-                            className="text-gray-400 hover:text-gray-600"
-                        >
+                        <h2 className="text-lg font-medium text-gray-900">Crear Nuevo Proyecto</h2>
+                        <button onClick={() => setShowNewProjectForm(false)} className="text-gray-400 hover:text-gray-600">
                             <X className="h-5 w-5" />
                         </button>
                     </div>
@@ -418,30 +389,23 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                         <div className="flex items-start space-x-3">
                             <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
                             <div>
-                                <p className="text-sm text-blue-800 font-medium">
-                                    Creación automática de proyecto
-                                </p>
+                                <p className="text-sm text-blue-800 font-medium">Creación automática de proyecto</p>
                                 <p className="text-xs text-blue-700 mt-1">
-                                    Sube el TDR y se creará automáticamente un nuevo proyecto con todos los datos extraídos (nombre, código, entidad ejecutora, monto, etc.)
+                                    Sube el TDR y se creará automáticamente un nuevo proyecto con todos los datos extraídos (nombre, código,
+                                    entidad ejecutora, monto, etc.)
                                 </p>
                             </div>
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Archivo TDR (PDF, DOC, DOCX):
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Archivo TDR (PDF, DOC, DOCX):</label>
                         <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
                             <Upload className="mx-auto h-12 w-12 text-gray-400" />
                             <div className="mt-4">
                                 <label htmlFor="new-tdr-file" className="cursor-pointer">
-                                    <span className="mt-2 block text-sm font-medium text-gray-900">
-                                        Haz clic para seleccionar el archivo TDR
-                                    </span>
-                                    <span className="mt-1 block text-xs text-gray-500">
-                                        Este TDR creará automáticamente un nuevo proyecto
-                                    </span>
+                                    <span className="mt-2 block text-sm font-medium text-gray-900">Haz clic para seleccionar el archivo TDR</span>
+                                    <span className="mt-1 block text-xs text-gray-500">Este TDR creará automáticamente un nuevo proyecto</span>
                                 </label>
                                 <input
                                     id="new-tdr-file"
@@ -465,10 +429,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                             </p>
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={() => setTdrFile(null)}
-                                        className="text-blue-600 hover:text-blue-800"
-                                    >
+                                    <button onClick={() => setTdrFile(null)} className="text-blue-600 hover:text-blue-800">
                                         <X className="h-4 w-4" />
                                     </button>
                                 </div>
@@ -509,9 +470,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
 
                                     {tdrResult.success && tdrResult.projectDataExtracted && (
                                         <div className="mt-3 p-3 bg-green-100 rounded">
-                                            <h4 className="text-xs font-medium text-green-900 mb-2">
-                                                Datos extraídos del proyecto:
-                                            </h4>
+                                            <h4 className="text-xs font-medium text-green-900 mb-2">Datos extraídos del proyecto:</h4>
                                             <div className="grid grid-cols-2 gap-2 text-xs text-green-800">
                                                 {tdrResult.projectDataExtracted.nombre_proyecto && (
                                                     <div>
@@ -543,8 +502,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             <button
                                 onClick={() => setActiveTab('tdr')}
                                 className={`py-2 px-4 border-b-2 font-medium text-sm ${activeTab === 'tdr'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        ? 'border-blue-500 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 TDR del Proyecto
@@ -552,8 +511,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             <button
                                 onClick={() => setActiveTab('expediente')}
                                 className={`py-2 px-4 border-b-2 font-medium text-sm ${activeTab === 'expediente'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        ? 'border-blue-500 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 Evaluar Expediente
@@ -562,25 +521,19 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                     </div>
 
                     <div className="p-6">
-                        {/* Tab TDR */}
+                        {/* Tab TDR: solo TDRs */}
                         {activeTab === 'tdr' && (
                             <div className="space-y-6">
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    TDRs del Proyecto
-                                </h3>
+                                <h3 className="text-lg font-medium text-gray-900">TDRs del Proyecto</h3>
 
-                                {/* TDRs disponibles */}
-                                {availableTdrs.length > 0 && (
+                                {/* Lista de TDRs */}
+                                {availableTdrs.length > 0 ? (
                                     <div className="space-y-3">
-                                        <h4 className="text-sm font-medium text-gray-700">
-                                            TDRs disponibles:
-                                        </h4>
+                                        <h4 className="text-sm font-medium text-gray-700">TDRs disponibles:</h4>
                                         {availableTdrs.map((tdr) => (
                                             <div
                                                 key={tdr.id}
-                                                className={`p-3 border rounded-lg cursor-pointer transition-colors ${selectedTdr === tdr.id
-                                                    ? 'border-blue-500 bg-blue-50'
-                                                    : 'border-gray-200 hover:border-gray-300'
+                                                className={`p-3 border rounded-lg cursor-pointer transition-colors ${selectedTdr === tdr.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
                                                     }`}
                                                 onClick={() => setSelectedTdr(tdr.id)}
                                             >
@@ -588,38 +541,32 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                     <div className="flex items-center space-x-3">
                                                         <FileText className="h-4 w-4 text-gray-600" />
                                                         <div>
-                                                            <p className="text-sm font-medium text-gray-900">
-                                                                {tdr.nombre}
-                                                            </p>
+                                                            <p className="text-sm font-medium text-gray-900">{tdr.nombre}</p>
                                                             <p className="text-xs text-gray-500">
-                                                                {new Date(tdr.fecha_creacion).toLocaleDateString()}
+                                                                {new Date(tdr.fecha_creacion).toLocaleDateString('es-ES')}
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    {selectedTdr === tdr.id && (
-                                                        <CheckCircle className="h-4 w-4 text-blue-600" />
-                                                    )}
+                                                    {selectedTdr === tdr.id && <CheckCircle className="h-4 w-4 text-blue-600" />}
                                                 </div>
                                             </div>
                                         ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+                                        No hay TDRs para este proyecto. Agrega uno a continuación.
                                     </div>
                                 )}
 
                                 {/* Subir TDR adicional */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-2">
-                                        Agregar nuevo TDR:
-                                    </h4>
+                                    <h4 className="text-sm font-medium text-gray-700 mb-2">Agregar nuevo TDR:</h4>
                                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
                                         <Upload className="mx-auto h-8 w-8 text-gray-400" />
                                         <div className="mt-2">
                                             <label htmlFor="additional-tdr-file" className="cursor-pointer">
-                                                <span className="block text-sm font-medium text-gray-900">
-                                                    Agregar TDR adicional
-                                                </span>
-                                                <span className="block text-xs text-gray-500">
-                                                    PDF, DOC, DOCX
-                                                </span>
+                                                <span className="block text-sm font-medium text-gray-900">Agregar TDR adicional</span>
+                                                <span className="block text-xs text-gray-500">PDF, DOC, DOCX</span>
                                             </label>
                                             <input
                                                 id="additional-tdr-file"
@@ -639,10 +586,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                         <FileText className="h-4 w-4 text-gray-600" />
                                                         <span className="text-sm text-gray-900">{tdrFile.name}</span>
                                                     </div>
-                                                    <button
-                                                        onClick={() => setTdrFile(null)}
-                                                        className="text-gray-400 hover:text-gray-600"
-                                                    >
+                                                    <button onClick={() => setTdrFile(null)} className="text-gray-400 hover:text-gray-600">
                                                         <X className="h-4 w-4" />
                                                     </button>
                                                 </div>
@@ -661,12 +605,10 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Tab Expediente */}
+                        {/* Tab Expediente: muestra tomos existentes + upload y evaluación */}
                         {activeTab === 'expediente' && (
                             <div className="space-y-6">
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    Evaluar Expediente Técnico
-                                </h3>
+                                <h3 className="text-lg font-medium text-gray-900">Evaluar Expediente Técnico</h3>
 
                                 {!selectedTdr ? (
                                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -683,27 +625,43 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                             <div className="flex items-center space-x-3">
                                                 <CheckCircle className="h-5 w-5 text-green-600" />
                                                 <p className="text-sm text-green-800">
-                                                    TDR de referencia: {availableTdrs.find(t => t.id === selectedTdr)?.nombre}
+                                                    TDR de referencia: {availableTdrs.find((t) => t.id === selectedTdr)?.nombre}
                                                 </p>
                                             </div>
                                         </div>
 
+                                        {/* Tomos ya cargados (orden > 0) */}
+                                        {availableTomos.length > 0 && (
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                                <h4 className="text-sm font-medium text-gray-900 mb-2">
+                                                    Tomos ya cargados ({availableTomos.length})
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {availableTomos.map((t) => (
+                                                        <div key={t.id} className="p-2 bg-gray-50 rounded flex items-center justify-between">
+                                                            <div className="flex items-center space-x-2">
+                                                                <FileText className="h-4 w-4 text-gray-600" />
+                                                                <span className="text-sm text-gray-900">{t.nombre}</span>
+                                                            </div>
+                                                            <span className="text-xs text-gray-500">
+                                                                {new Date(t.fecha_creacion).toLocaleDateString('es-ES')}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Subir tomos */}
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                Tomos del expediente (PDF escaneados):
-                                            </label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Tomos del expediente (PDF escaneados):</label>
 
                                             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
                                                 <Plus className="mx-auto h-8 w-8 text-gray-400" />
                                                 <div className="mt-2">
                                                     <label htmlFor="tomos-files" className="cursor-pointer">
-                                                        <span className="block text-sm font-medium text-gray-900">
-                                                            Agregar tomos
-                                                        </span>
-                                                        <span className="block text-xs text-gray-500">
-                                                            Solo PDF • OCR automático
-                                                        </span>
+                                                        <span className="block text-sm font-medium text-gray-900">Agregar tomos</span>
+                                                        <span className="block text-xs text-gray-500">Solo PDF • OCR automático</span>
                                                     </label>
                                                     <input
                                                         id="tomos-files"
@@ -716,12 +674,10 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Lista de tomos */}
+                                            {/* Lista de tomos a subir */}
                                             {tomoFiles.length > 0 && (
                                                 <div className="mt-4 space-y-2">
-                                                    <h4 className="text-sm font-medium text-gray-900">
-                                                        Tomos seleccionados ({tomoFiles.length}):
-                                                    </h4>
+                                                    <h4 className="text-sm font-medium text-gray-900">Tomos seleccionados ({tomoFiles.length}):</h4>
                                                     {tomoFiles.map((file, index) => (
                                                         <div key={`${file.name}-${index}`} className="p-3 bg-gray-50 rounded-lg">
                                                             <div className="flex items-center justify-between">
@@ -731,15 +687,10 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                                         <p className="text-sm font-medium text-gray-900">
                                                                             Tomo {index + 1}: {file.name}
                                                                         </p>
-                                                                        <p className="text-xs text-gray-500">
-                                                                            {formatFileSize(file.size)}
-                                                                        </p>
+                                                                        <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
                                                                     </div>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => handleRemoveTomo(index)}
-                                                                    className="text-red-600 hover:text-red-800"
-                                                                >
+                                                                <button onClick={() => handleRemoveTomo(index)} className="text-red-600 hover:text-red-800">
                                                                     <X className="h-4 w-4" />
                                                                 </button>
                                                             </div>
@@ -780,9 +731,11 @@ const ExpedientesTecnicosUpload: React.FC = () => {
 
                                                         {evaluationResult.success && evaluationResult.resumen && (
                                                             <div className="mt-3 text-xs text-green-800">
-                                                                <p>Total: {evaluationResult.resumen.total_tomos} |
-                                                                    Exitosos: {evaluationResult.resumen.tomos_procesados_exitosamente} |
-                                                                    Errores: {evaluationResult.resumen.tomos_con_errores}</p>
+                                                                <p>
+                                                                    Total: {evaluationResult.resumen.total_tomos} | Exitosos:{' '}
+                                                                    {evaluationResult.resumen.tomos_procesados_exitosamente} | Errores:{' '}
+                                                                    {evaluationResult.resumen.tomos_con_errores}
+                                                                </p>
                                                             </div>
                                                         )}
                                                     </div>

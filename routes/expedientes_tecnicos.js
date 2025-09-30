@@ -254,6 +254,7 @@ router.post('/subir-tdr', uploadTdr.single('tdr'), async (req, res) => {
         return res.status(200).json({
             success: true,
             proyectoId: proyecto_id,
+            tdrId: tdrDocumentId,
             message: 'TDR enviado a IA y proyecto creado/actualizado exitosamente.',
         });
     } catch (error) {
@@ -325,11 +326,25 @@ router.post('/evaluar-expediente', uploadTomos.array('tomos', 10), async (req, r
 });
 
 // === RUTAS GET ===
-router.get(['/tdrs/:proyecto_id', '/documentos/:proyecto_id'], async (req, res) => {
+router.get('/tdrs/:proyecto_id', async (req, res) => {
+    try {
+        const { proyecto_id } = req.params;
+        const tdrs = await db('documentos')
+            .select('id', 'nombre_archivo as nombre', 'fecha_subida as fecha_creacion', 'estado', 'orden', 'proyecto_id')
+            .where({ proyecto_id })
+            .andWhere('orden', 0);
+        return res.status(200).json({ success: true, tdrs });
+    } catch (error) {
+        logger.error(`Error al listar TDRs: ${error.message}`, 'ListarTDRs');
+        return res.status(500).json({ success: false, message: 'Error al listar TDRs', error: error.message });
+    }
+});
+
+router.get('/documentos/:proyecto_id', async (req, res) => {
     try {
         const { proyecto_id } = req.params;
         const documentos = await db('documentos')
-            .select('id', 'nombre_archivo as nombre', 'fecha_subida as fecha_creacion', 'estado', 'orden')
+            .select('id', 'nombre_archivo as nombre', 'fecha_subida as fecha_creacion', 'estado', 'orden', 'proyecto_id')
             .where('proyecto_id', proyecto_id)
             .orderBy('orden', 'asc');
         return res.status(200).json({ success: true, documentos });
