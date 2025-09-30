@@ -14,6 +14,7 @@ import logoRegionalDark from "@/assets/logo-region-dark.png";
 import { useState, useEffect } from "react";
 import ExpedientesTecnicosUpload from "./pages/Upload";
 import Topografia from "./pages/Topografia";
+import ContenidoMinimo from "./pages/ContenidoMinimo";
 
 const queryClient = new QueryClient();
 
@@ -244,6 +245,7 @@ const App = () => {
                                                         <Route path="/upload" element={<ExpedientesTecnicosUpload />} />
                                                         <Route path="/estudios/topografico" element={<Topografia />} />
                                                         <Route path="/estudios/topografico/:proyectoId?" element={<Topografia />} />
+                                                        <Route path="/contenido-minimo/:proyectoId?" element={<ContenidoMinimo />} />
                                                     </Routes>
                                                 </AppLayout>
                                             </FadeIn>

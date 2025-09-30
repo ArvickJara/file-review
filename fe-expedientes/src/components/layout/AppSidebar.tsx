@@ -8,6 +8,7 @@ import {
     Database,
     Layers,
     ChevronDown,
+    ListCheck
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSidebar } from "@/contexts/SidebarContext";
@@ -16,7 +17,7 @@ import logoRegionalDark from "@/assets/logo-region-dark.png";
 import { useState } from "react";
 
 const mainItems = [
-    { title: "Expedientes - TDR", url: "/", icon: Home },
+    { title: "Expedientesv", url: "/", icon: Home },
     { title: "Costos y presupuestos", url: "/costos-presupuestos", icon: FileText },
     {
         title: "Estudios básicos",
@@ -30,7 +31,7 @@ const mainItems = [
         ],
     },
     { title: "Subir Archivos", url: "/upload", icon: Upload },
-    { title: "Análisis", url: "/analytics", icon: BarChart3 },
+    { title: "Contenido Minimo", url: "/contenido-minimo", icon: ListCheck },
 ];
 
 const managementItems = [
