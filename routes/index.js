@@ -17,6 +17,13 @@ try {
     router.use('/expedientes_tecnicos', expedientesTecnicosRoutes);
     logger.info('Rutas de expedientes técnicos registradas', 'Routes');
 
+    // Rutas de evaluación de contenido mínimo
+    const contenidoMinimoRoutes = require('./contenido-minimo');
+    // Nota: se monta bajo el mismo prefijo para exponer /api/expedientes_tecnicos/evaluar-contenido-minimo
+    router.use('/expedientes_tecnicos', contenidoMinimoRoutes);
+    logger.info('Rutas de contenido mínimo registradas', 'Routes');
+
+    // Rutas de proyectos
     const proyectosRoutes = require('./proyectos');
     router.use('/proyectos', proyectosRoutes);
     logger.info('Rutas de proyectos registradas', 'Routes');

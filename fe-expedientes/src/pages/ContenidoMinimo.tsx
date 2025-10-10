@@ -16,9 +16,10 @@ const SELECTED_PROYECTO_KEY = 'selectedProyectoId';
 
 type Documento = {
     id: string;
-    nombre: string;
-    fecha_creacion: string;
-    estado: string;
+    nombre?: string;
+    nombre_archivo?: string;
+    fecha_creacion?: string;
+    estado?: string;
     proyecto_id: string;
     orden?: number; // 0 = TDR, 1..n = tomos
 };
@@ -46,6 +47,13 @@ type ResultadoContenidoMinimo = {
         };
     };
     recomendaciones?: string[];
+    // cuando el backend no pudo parsear JSON del modelo
+    error_detalle?: string;
+};
+
+type StorageInfo = {
+    base: string;
+    tomos: Array<{ id: string; nombre?: string; dir: string; paginas: number }>;
 };
 
 function useProyectoIdFromRoute() {
@@ -68,34 +76,55 @@ export default function ContenidoMinimo() {
 
     const [loading, setLoading] = useState(false);
     const [evaluating, setEvaluating] = useState(false);
+    const [force, setForce] = useState(false);
     const [proyecto, setProyecto] = useState<Proyecto | null>(null);
     const [documentos, setDocumentos] = useState<Documento[]>([]);
     const [resultado, setResultado] = useState<ResultadoContenidoMinimo | null>(null);
+    const [storage, setStorage] = useState<StorageInfo | null>(null);
 
-    const tdr = useMemo(() => documentos.find((d) => (d.orden ?? 0) === 0), [documentos]);
-    const tomos = useMemo(() => documentos.filter((d) => (d.orden ?? 0) > 0).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0)), [documentos]);
+    // TDR: por orden=0, y fallback por nombre que contenga "tdr"
+    const tdr = useMemo(
+        () =>
+            documentos.find((d) => (d.orden ?? 0) === 0) ||
+            documentos.find((d) => (d.nombre || d.nombre_archivo || '').toLowerCase().includes('tdr')),
+        [documentos]
+    );
+
+    // Tomos: orden>0; si no hay orden, toma los que no parecen TDR
+    const tomos = useMemo(() => {
+        const items = documentos.filter((d) => {
+            const ord = d.orden ?? 0;
+            const isTdrName = (d.nombre || d.nombre_archivo || '').toLowerCase().includes('tdr');
+            return ord > 0 || !isTdrName;
+        });
+        return items.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
+    }, [documentos]);
 
     useEffect(() => {
         if (!proyectoId) return;
+        const ac = new AbortController();
         (async () => {
             setLoading(true);
             try {
-                const p = await fetch(`${API_BASE}/api/proyectos/${proyectoId}`);
+                const p = await fetch(`${API_BASE}/api/proyectos/${proyectoId}`, { signal: ac.signal });
                 if (p.ok) {
                     const pj = await p.json();
                     setProyecto(pj.proyecto || null);
                 }
-                const d = await fetch(`${API_BASE}/api/expedientes_tecnicos/documentos/${proyectoId}`);
+                const d = await fetch(`${API_BASE}/api/expedientes_tecnicos/documentos/${proyectoId}`, {
+                    signal: ac.signal,
+                });
                 if (d.ok) {
                     const dj = await d.json();
                     setDocumentos(Array.isArray(dj.documentos) ? dj.documentos : []);
                 }
-            } catch (e) {
-                console.error(e);
+            } catch (e: any) {
+                if (e?.name !== 'AbortError') console.error(e);
             } finally {
                 setLoading(false);
             }
         })();
+        return () => ac.abort();
     }, [proyectoId]);
 
     const canEvaluate = !!proyectoId && !!tdr && tomos.length > 0 && !evaluating;
@@ -104,12 +133,17 @@ export default function ContenidoMinimo() {
         if (!canEvaluate || !proyectoId || !tdr) return;
         setEvaluating(true);
         setResultado(null);
+        setStorage(null);
         try {
             const form = new FormData();
             form.append('proyecto_id', proyectoId);
             form.append('tdr_id', tdr.id);
-            // Enviar todos los tomos. El backend aceptará un arreglo.
-            tomos.forEach((t) => form.append('tomo_ids[]', t.id));
+            tomos.forEach((t) => form.append('tomo_ids[]', t.id)); // forma estándar
+            form.append('tomo_ids_csv', tomos.map((t) => t.id).join(',')); // fallback
+            if (force) form.append('force', 'true');
+
+            // Depuración opcional:
+            // for (const [k, v] of form.entries()) console.log('FD:', k, v);
 
             const resp = await fetch(`${API_BASE}/api/expedientes_tecnicos/evaluar-contenido-minimo`, {
                 method: 'POST',
@@ -117,10 +151,12 @@ export default function ContenidoMinimo() {
             });
             const data = await resp.json();
             if (!resp.ok || !data.success) {
+                console.error('Backend payload:', data);
                 alert(data.message || 'Error al evaluar contenido mínimo');
                 return;
             }
             setResultado(data.evaluacion as ResultadoContenidoMinimo);
+            setStorage(data.storage as StorageInfo);
         } catch (e) {
             console.error(e);
             alert('Error de conexión al servidor');
@@ -149,7 +185,7 @@ export default function ContenidoMinimo() {
         <div className="max-w-7xl mx-auto p-6 space-y-6">
             {/* Header */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">Evaluación de Contenido Mínimo</h1>
                         <p className="text-sm text-gray-600 mt-1">
@@ -159,25 +195,40 @@ export default function ContenidoMinimo() {
                             Se comparará el TDR vs todos los tomos del expediente técnico. Prioridad: memoria descriptiva.
                         </p>
                     </div>
-                    <button
-                        onClick={empezarEvaluacion}
-                        disabled={!canEvaluate}
-                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium ${canEvaluate ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                            }`}
-                        title={!tdr ? 'Falta TDR' : tomos.length === 0 ? 'Faltan tomos' : 'Iniciar evaluación'}
-                    >
-                        {evaluating ? (
-                            <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Evaluando…
-                            </>
-                        ) : (
-                            <>
-                                <Brain className="h-4 w-4" />
-                                Empezar evaluación
-                            </>
-                        )}
-                    </button>
+
+                    <div className="flex items-center gap-3">
+                        {/* Toggle force */}
+                        <label className="flex items-center gap-2 text-xs text-gray-600">
+                            <input
+                                type="checkbox"
+                                checked={force}
+                                onChange={(e) => setForce(e.target.checked)}
+                                disabled={evaluating}
+                            />
+                            Reprocesar (force)
+                        </label>
+
+                        <button
+                            onClick={empezarEvaluacion}
+                            disabled={!canEvaluate}
+                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium ${canEvaluate ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                }`}
+                            title={!tdr ? 'Falta TDR' : tomos.length === 0 ? 'Faltan tomos' : 'Iniciar evaluación'}
+                            aria-busy={evaluating}
+                        >
+                            {evaluating ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Evaluando…
+                                </>
+                            ) : (
+                                <>
+                                    <Brain className="h-4 w-4" />
+                                    Empezar evaluación
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -199,13 +250,16 @@ export default function ContenidoMinimo() {
                                     {tdr ? (
                                         <div className="mt-1 flex items-center gap-2 text-sm">
                                             <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                            <span className="text-gray-800">{tdr.nombre}</span>
+                                            <span className="text-gray-800">{tdr.nombre || tdr.nombre_archivo || tdr.id}</span>
                                         </div>
                                     ) : (
                                         <div className="mt-1 flex items-center gap-2 text-sm">
                                             <AlertCircle className="h-4 w-4 text-yellow-600" />
                                             <span className="text-gray-700">
-                                                No se encontró TDR. <Link to="/upload" className="underline text-blue-700">Cargar</Link>
+                                                No se encontró TDR.{' '}
+                                                <Link to="/upload" className="underline text-blue-700">
+                                                    Cargar
+                                                </Link>
                                             </span>
                                         </div>
                                     )}
@@ -225,7 +279,8 @@ export default function ContenidoMinimo() {
                                             <ul className="mt-2 list-disc pl-5 text-xs text-gray-600 space-y-1">
                                                 {tomos.slice(0, 5).map((t) => (
                                                     <li key={t.id}>
-                                                        {t.orden ? `Tomo ${t.orden}: ` : ''}{t.nombre}
+                                                        {t.orden ? `Tomo ${t.orden}: ` : ''}
+                                                        {t.nombre || t.nombre_archivo || t.id}
                                                     </li>
                                                 ))}
                                                 {tomos.length > 5 && <li>… y {tomos.length - 5} más</li>}
@@ -235,7 +290,10 @@ export default function ContenidoMinimo() {
                                         <div className="mt-1 flex items-center gap-2 text-sm">
                                             <AlertCircle className="h-4 w-4 text-yellow-600" />
                                             <span className="text-gray-700">
-                                                No hay tomos. <Link to="/upload" className="underline text-blue-700">Cargar</Link>
+                                                No hay tomos.{' '}
+                                                <Link to="/upload" className="underline text-blue-700">
+                                                    Cargar
+                                                </Link>
                                             </span>
                                         </div>
                                     )}
@@ -266,7 +324,9 @@ export default function ContenidoMinimo() {
                         <button
                             className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded text-gray-700"
                             onClick={() => {
-                                const blob = new Blob([JSON.stringify({ proyecto, resultado }, null, 2)], { type: 'application/json' });
+                                const blob = new Blob([JSON.stringify({ proyecto, resultado, storage }, null, 2)], {
+                                    type: 'application/json',
+                                });
                                 const url = URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
@@ -300,6 +360,14 @@ export default function ContenidoMinimo() {
                             </span>
                         </div>
                     </div>
+
+                    {/* Mostrar error_detalle si el modelo no envió JSON válido */}
+                    {resultado.cumplimiento_general === 'ERROR' && resultado.error_detalle && (
+                        <div className="mt-4 p-3 bg-gray-50 border rounded text-xs text-gray-700">
+                            <div className="font-medium mb-1">Detalle de error (modelo):</div>
+                            <pre className="whitespace-pre-wrap break-words">{resultado.error_detalle}</pre>
+                        </div>
+                    )}
 
                     {/* Faltantes globales */}
                     {resultado.items_obligatorios_faltantes?.length > 0 && (
@@ -363,6 +431,21 @@ export default function ContenidoMinimo() {
                             <ul className="text-sm text-blue-800 list-disc pl-5 space-y-1">
                                 {resultado.recomendaciones.map((r, i) => (
                                     <li key={i}>{r}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* Trazabilidad de derivados (carpetas/archivos) */}
+                    {storage && (
+                        <div className="mt-6 p-4 bg-gray-50 border rounded text-xs text-gray-700">
+                            <div className="font-medium mb-1">Derivados generados</div>
+                            <div className="break-all">Base: {storage.base}</div>
+                            <ul className="list-disc pl-5 mt-2 space-y-1">
+                                {storage.tomos?.map((t) => (
+                                    <li key={t.id}>
+                                        {t.nombre || `Tomo ${t.id}`} — {t.paginas} pág. → {t.dir}
+                                    </li>
                                 ))}
                             </ul>
                         </div>

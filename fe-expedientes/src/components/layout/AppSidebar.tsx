@@ -17,7 +17,7 @@ import logoRegionalDark from "@/assets/logo-region-dark.png";
 import { useState } from "react";
 
 const mainItems = [
-    { title: "Expedientesv", url: "/", icon: Home },
+    { title: "Dashboard", url: "/", icon: Home },
     { title: "Costos y presupuestos", url: "/costos-presupuestos", icon: FileText },
     {
         title: "Estudios básicos",
@@ -30,8 +30,9 @@ const mainItems = [
             { title: "Estudio de impacto ambiental", url: "/estudios/impacto-ambiental" },
         ],
     },
-    { title: "Subir Archivos", url: "/upload", icon: Upload },
     { title: "Contenido Minimo", url: "/contenido-minimo", icon: ListCheck },
+    { title: "Subir Archivos", url: "/upload", icon: Upload },
+
 ];
 
 const managementItems = [
