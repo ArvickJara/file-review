@@ -502,8 +502,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             <button
                                 onClick={() => setActiveTab('tdr')}
                                 className={`py-2 px-4 border-b-2 font-medium text-sm ${activeTab === 'tdr'
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 TDR del Proyecto
@@ -511,8 +511,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             <button
                                 onClick={() => setActiveTab('expediente')}
                                 className={`py-2 px-4 border-b-2 font-medium text-sm ${activeTab === 'expediente'
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 Evaluar Expediente

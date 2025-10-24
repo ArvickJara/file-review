@@ -1,0 +1,89 @@
+
+  // ==============================
+  // 1. Tablas de Contexto (Archivos y Proyecto)
+  // ==============================
+
+  Table proyecto {
+    id varchar [pk]
+    nombre varchar [not null, unique]
+    cui varchar [unique]
+    numero_entregables integer [not null]
+    descripcion text
+    datos_extraidos boolean [default: false]
+    fecha_creacion timestamp [default: `now()`]
+  }
+
+  Table documentos {
+    id varchar [pk]
+    proyecto_id varchar [not null]
+    nombre_archivo varchar [not null]
+    ruta_archivo varchar [not null]
+    estado varchar [default: 'pendiente'] // e.g., 'pendiente', 'en_revision', 'aprobado'
+    fecha_subida timestamp [default: `now()`]
+  }
+
+  Table analisis {
+    id integer [pk, increment]
+    documento_id varchar [not null]
+    contenido text [not null] // Resultado del análisis (e.g., JSON con el cumplimiento)
+    modelo_ia varchar
+    tipo_analisis varchar  // e.g., 'contenido_minimo', 'costos', 'metrados'
+    fecha_analisis timestamp [default: `now()`]
+  }
+
+
+  // ==============================
+  // 2. Jerarquía del TDR (Estructura de la Evaluación)
+  // ==============================
+
+  Table tdr_entregable {
+    id integer [pk, increment]
+    proyecto_id varchar [not null]
+    nombre_entregable varchar [not null] // e.g., 'PRIMER ENTREGABLE'
+    plazo_dias integer // Añadimos el campo que sugeriste
+    created_at timestamp [default: `now()`]
+  }
+
+  Table tdr_seccion_estudio {
+    id integer [pk, increment]
+    entregable_id integer [not null]
+    nombre varchar [not null]  // e.g., 'ESTUDIO TOPOGRÁFICO', 'ESTRUCTURAS'
+    orden integer [not null]
+    es_estudio_completo boolean [default: false]
+    created_at timestamp [default: `now()`]
+  }
+
+  Table tdr_tipo_documento {
+    id integer [pk, increment]
+    seccion_estudio_id integer [not null]
+    nombre_tipo_documento varchar [not null]  // e.g., 'MEMORIA DESCRIPTIVA', 'PLANOS'
+    orden integer [not null]
+    created_at timestamp [default: `now()`]
+  }
+
+  // Corregido: Ahora depende de tdr_tipo_documento para mantener la jerarquía (4 niveles)
+  Table tdr_contenido_minimo {
+    id integer [pk, increment]
+    tipo_documento_id integer [not null] // REFERENCIA CORRECTA
+    nombre_requisito varchar [not null]    // e.g., 'ANTECEDENTES', 'Cálculo de Capacidad Portante'
+    descripcion_completa text [not null]   // Detalle específico del requisito del TDR
+    es_obligatorio boolean [default: true]
+    orden integer [not null]
+    created_at timestamp [default: `now()`]
+  }
+
+
+  // ==============================
+  // 3. Relaciones (Foreign Keys)
+  // ==============================
+
+  // Relaciones del Contexto
+  Ref: tdr_entregable.proyecto_id > proyecto.id [delete: cascade]
+  Ref: documentos.proyecto_id > proyecto.id [delete: cascade]
+  Ref: analisis.documento_id > documentos.id [delete: cascade]
+
+  // Relaciones de la Jerarquía del TDR
+  Ref: tdr_seccion_estudio.entregable_id > tdr_entregable.id [delete: cascade]
+  Ref: tdr_tipo_documento.seccion_estudio_id > tdr_seccion_estudio.id [delete: cascade]
+  // La clave de la normalización
+  Ref: tdr_contenido_minimo.tipo_documento_id > tdr_tipo_documento.id [delete: cascade]

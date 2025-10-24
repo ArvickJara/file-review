@@ -8,7 +8,8 @@ import {
     Database,
     Layers,
     ChevronDown,
-    ListCheck
+    ListCheck,
+    Folder
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSidebar } from "@/contexts/SidebarContext";
@@ -31,7 +32,7 @@ const mainItems = [
         ],
     },
     { title: "Contenido Minimo", url: "/contenido-minimo", icon: ListCheck },
-    { title: "Subir Archivos", url: "/upload", icon: Upload },
+    { title: "Proyectos", url: "/proyectos", icon: Folder },
 
 ];
 
