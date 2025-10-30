@@ -13,12 +13,6 @@ export const API_ENDPOINTS = {
     // Proyectos
     PROYECTOS: '/api/proyectos',
 
-    // Expedientes técnicos
-    SUBIR_TDR: '/api/expedientes_tecnicos/subir-tdr',
-    EVALUAR_EXPEDIENTE: '/api/expedientes_tecnicos/evaluar-expediente',
-    EVALUAR_CONTENIDO_MINIMO: '/api/expedientes_tecnicos/evaluar-contenido-minimo',
-    DOCUMENTOS: (proyectoId: string) => `/api/expedientes_tecnicos/documentos/${proyectoId}`,
-    TDRS: (proyectoId: string) => `/api/expedientes_tecnicos/tdrs/${proyectoId}`,
 };
 
 // Helper para construir URLs completas

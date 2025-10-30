@@ -172,7 +172,7 @@ export default function ContenidoMinimo() {
                     <AlertCircle className="h-5 w-5 text-yellow-700" />
                     <div>
                         <p className="text-sm text-yellow-800">No se encontró el ID del proyecto.</p>
-                        <Link className="text-sm text-blue-700 underline" to="/upload">
+                        <Link className="text-sm text-blue-700 underline" to="/proyectos">
                             Ir a gestión de expedientes
                         </Link>
                     </div>
@@ -257,7 +257,7 @@ export default function ContenidoMinimo() {
                                             <AlertCircle className="h-4 w-4 text-yellow-600" />
                                             <span className="text-gray-700">
                                                 No se encontró TDR.{' '}
-                                                <Link to="/upload" className="underline text-blue-700">
+                                                <Link to="/proyectos" className="underline text-blue-700">
                                                     Cargar
                                                 </Link>
                                             </span>
@@ -291,7 +291,7 @@ export default function ContenidoMinimo() {
                                             <AlertCircle className="h-4 w-4 text-yellow-600" />
                                             <span className="text-gray-700">
                                                 No hay tomos.{' '}
-                                                <Link to="/upload" className="underline text-blue-700">
+                                                <Link to="/proyectos" className="underline text-blue-700">
                                                     Cargar
                                                 </Link>
                                             </span>

@@ -12,7 +12,7 @@ import NotFound from "./pages/NotFound";
 import logoRegionalLight from "@/assets/logo-region-light.png";
 import logoRegionalDark from "@/assets/logo-region-dark.png";
 import { useState, useEffect } from "react";
-import ExpedientesTecnicosUpload from "./pages/Upload";
+import ExpedientesTecnicosUpload from "./pages/Proyectos";
 import Topografia from "./pages/Topografia";
 import ContenidoMinimo from "./pages/ContenidoMinimo";
 
@@ -242,7 +242,7 @@ const App = () => {
                                                         <Route path="/" element={<Index />} />
                                                         <Route path="*" element={<NotFound />} />
                                                         <Route path="/costos-presupuestos" element={<CostosPresupuestos />} />
-                                                        <Route path="/upload" element={<ExpedientesTecnicosUpload />} />
+                                                        <Route path="/proyectos" element={<ExpedientesTecnicosUpload />} />
                                                         <Route path="/estudios/topografico" element={<Topografia />} />
                                                         <Route path="/estudios/topografico/:proyectoId?" element={<Topografia />} />
                                                         <Route path="/contenido-minimo/:proyectoId?" element={<ContenidoMinimo />} />

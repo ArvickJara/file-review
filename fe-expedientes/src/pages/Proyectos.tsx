@@ -35,12 +35,23 @@ interface UploadResult {
     extractedTextLength?: number;
     projectDataExtracted?: {
         nombre_proyecto?: string;
-        codigo_proyecto?: string;
+        cui?: string;
         entidad_ejecutora?: string;
+        numero_entregables?: number;
         monto_referencial?: number;
         descripcion?: string;
         ubicacion?: string;
         plazo_ejecucion?: string;
+        modalidad_ejecucion?: string;
+        tipo_proceso?: string;
+        codigo_proyecto?: string;
+        objetivos_generales?: string;
+        objetivos_especificos?: string;
+        alcance_servicios?: string;
+        productos_esperados?: string;
+        perfil_consultor?: string;
+        experiencia_requerida?: string;
+        requisitos_tecnicos?: string;
     };
     resumen?: { total_tomos: number; tomos_procesados_exitosamente: number; tomos_con_errores: number };
     resultados?: Array<{ tomo: number; archivo: string; analisis?: string; error?: string }>;
@@ -113,8 +124,8 @@ const NewProjectCard: React.FC<{
                 {isCreating ? (
                     <>
                         <Loader2 className="h-8 w-8 text-blue-600 animate-spin mb-2" />
-                        <p className="text-sm font-medium text-blue-900">Creando proyecto...</p>
-                        <p className="text-xs text-blue-700">Procesando TDR y extrayendo datos</p>
+                        <p className="text-sm font-medium text-blue-900">Analizando TDR...</p>
+                        <p className="text-xs text-blue-700">Extrayendo datos del proyecto automáticamente</p>
                     </>
                 ) : (
                     <>
@@ -180,7 +191,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
             setAvailableTdrs([]);
             setAvailableTomos([]);
         }
-    }, [selectedProyecto, showNewProjectForm]);
+    }, [selectedProyecto, showNewProjectForm]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const loadAvailableProyectos = async () => {
         try {
@@ -242,7 +253,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
         return validTypes.includes(file.type);
     };
 
-    // Subir TDR (crea o adjunta al proyecto)
+    // Subir TDR (crea o adjunta al proyecto) - ACTUALIZADO PARA OPENAI
     const handleTdrUpload = async () => {
         if (!tdrFile) return;
 
@@ -259,31 +270,88 @@ const ExpedientesTecnicosUpload: React.FC = () => {
         try {
             const formData = new FormData();
             formData.append('tdr', tdrFile);
-            if (selectedProyecto) formData.append('proyecto_id', selectedProyecto);
 
-            const resp = await fetch(`${API_BASE}/api/expedientes_tecnicos/subir-tdr`, { method: 'POST', body: formData });
-            const result: UploadResult = await resp.json();
-            setTdrResult(result);
+            // Si hay proyecto seleccionado, enviarlo; si no, se creará uno nuevo
+            if (selectedProyecto) {
+                formData.append('proyecto_id', selectedProyecto);
+            } else {
+                formData.append('crear_proyecto', 'true');
+            }
 
+            // Usar el nuevo endpoint que incluye análisis con OpenAI
+            const resp = await fetch(`${API_BASE}/api/tdr/upload-and-analyze`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await resp.json();
+
+            // Mostrar respuesta de OpenAI en la consola del navegador
+            try {
+                const analisis = result?.data?.analisis;
+                // Usar console.group para agrupar y mejorar lectura
+                console.group('%cOpenAI TDR Análisis', 'color: #10b981; font-weight: bold;');
+                console.log('Modelo:', analisis?.modelo_usado);
+                if (analisis?.raw_preview) {
+                    console.log('Raw preview (hasta 4000 chars):');
+                    console.log(analisis.raw_preview);
+                }
+                if (analisis?.campos_extraidos) {
+                    console.log('Campos extraídos:');
+                    console.dir(analisis.campos_extraidos, { depth: null });
+                    const texto = analisis.campos_extraidos.texto_entregables_completo;
+                    if (texto) {
+                        console.log('texto_entregables_completo (longitud):', texto.length);
+                    }
+                }
+                console.groupEnd();
+            } catch (e) {
+                console.warn('No se pudo imprimir el análisis de OpenAI en consola:', e);
+            }
+
+            // Actualizar interfaz con resultado más detallado
             if (result.success) {
-                // Seleccionar proyecto y TDR devueltos por el backend
-                const proyectoId = result.proyectoId || selectedProyecto;
-                if (proyectoId) setSelectedProyecto(proyectoId); // se persiste por useEffect
+                setTdrResult({
+                    success: true,
+                    message: result.message,
+                    proyectoId: result.data.proyecto_id,
+                    tdrId: result.data.documento_id,
+                    projectDataExtracted: result.data.analisis?.campos_extraidos,
+                    file: {
+                        name: result.data.archivo.nombre,
+                        path: result.data.archivo.ruta
+                    }
+                });
 
+                // Seleccionar el proyecto (nuevo o existente)
+                const proyectoId = result.data.proyecto_id;
+                if (proyectoId) setSelectedProyecto(proyectoId);
+
+                // Recargar datos
                 await loadAvailableProyectos();
                 await loadAvailableTdrs();
                 await loadAvailableTomos();
 
-                if (result.tdrId) setSelectedTdr(result.tdrId);
+                if (result.data.documento_id) setSelectedTdr(result.data.documento_id);
 
                 // Limpiar y cambiar de pestaña
                 setTdrFile(null);
                 setShowNewProjectForm(false);
                 setActiveTab('expediente');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                setTdrResult({
+                    success: false,
+                    message: result.message || 'Error procesando TDR con OpenAI'
+                });
             }
+
         } catch (error) {
-            setTdrResult({ success: false, message: 'Error de conexión al subir TDR' });
+            console.error('Error en upload TDR:', error);
+            setTdrResult({
+                success: false,
+                message: 'Error de conexión al procesar TDR. Verifica que el servidor esté funcionando.'
+            });
         } finally {
             setIsUploadingTdr(false);
             setIsCreatingProject(false);
@@ -391,8 +459,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             <div>
                                 <p className="text-sm text-blue-800 font-medium">Creación automática de proyecto</p>
                                 <p className="text-xs text-blue-700 mt-1">
-                                    Sube el TDR y se creará automáticamente un nuevo proyecto con todos los datos extraídos (nombre, código,
-                                    entidad ejecutora, monto, etc.)
+                                    Sube el TDR y se creará automáticamente un nuevo proyecto con todos los datos de este.
                                 </p>
                             </div>
                         </div>
@@ -445,7 +512,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                 {isUploadingTdr ? (
                                     <>
                                         <Loader2 className="h-4 w-4 animate-spin" />
-                                        <span>Creando proyecto y procesando TDR...</span>
+                                        <span>Analizando TDR y creando proyecto...</span>
                                     </>
                                 ) : (
                                     <span>Crear Proyecto con TDR</span>
@@ -469,22 +536,67 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                     </p>
 
                                     {tdrResult.success && tdrResult.projectDataExtracted && (
-                                        <div className="mt-3 p-3 bg-green-100 rounded">
-                                            <h4 className="text-xs font-medium text-green-900 mb-2">Datos extraídos del proyecto:</h4>
-                                            <div className="grid grid-cols-2 gap-2 text-xs text-green-800">
+                                        <div className="mt-3 p-4 bg-green-100 rounded-lg">
+                                            <h4 className="text-sm font-medium text-green-900 mb-3 flex items-center">
+                                                <CheckCircle className="h-4 w-4 mr-2" />
+                                                Datos extraídos con OpenAI
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                                                 {tdrResult.projectDataExtracted.nombre_proyecto && (
-                                                    <div>
-                                                        <span className="font-medium">Nombre:</span>
-                                                        <p>{tdrResult.projectDataExtracted.nombre_proyecto}</p>
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Nombre del Proyecto:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.nombre_proyecto}</p>
                                                     </div>
                                                 )}
-                                                {tdrResult.projectDataExtracted.codigo_proyecto && (
-                                                    <div>
-                                                        <span className="font-medium">Código:</span>
-                                                        <p>{tdrResult.projectDataExtracted.codigo_proyecto}</p>
+                                                {tdrResult.projectDataExtracted.cui && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">CUI:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.cui}</p>
+                                                    </div>
+                                                )}
+                                                {tdrResult.projectDataExtracted.entidad_ejecutora && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Entidad Ejecutora:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.entidad_ejecutora}</p>
+                                                    </div>
+                                                )}
+                                                {tdrResult.projectDataExtracted.monto_referencial && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Monto Referencial:</span>
+                                                        <p className="text-green-800 mt-1">S/ {tdrResult.projectDataExtracted.monto_referencial.toLocaleString()}</p>
+                                                    </div>
+                                                )}
+                                                {tdrResult.projectDataExtracted.ubicacion && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Ubicación:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.ubicacion}</p>
+                                                    </div>
+                                                )}
+                                                {tdrResult.projectDataExtracted.plazo_ejecucion && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Plazo de Ejecución:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.plazo_ejecucion}</p>
+                                                    </div>
+                                                )}
+                                                {tdrResult.projectDataExtracted.numero_entregables && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Número de Entregables:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.numero_entregables}</p>
+                                                    </div>
+                                                )}
+                                                {tdrResult.projectDataExtracted.modalidad_ejecucion && (
+                                                    <div className="bg-white p-2 rounded">
+                                                        <span className="font-medium text-green-900">Modalidad:</span>
+                                                        <p className="text-green-800 mt-1">{tdrResult.projectDataExtracted.modalidad_ejecucion}</p>
                                                     </div>
                                                 )}
                                             </div>
+                                            {tdrResult.projectDataExtracted.descripcion && (
+                                                <div className="mt-3 bg-white p-3 rounded">
+                                                    <span className="font-medium text-green-900">Descripción:</span>
+                                                    <p className="text-green-800 mt-1 text-sm">{tdrResult.projectDataExtracted.descripcion}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -597,7 +709,14 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                 disabled={isUploadingTdr}
                                                 className="mt-3 w-full bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                                             >
-                                                {isUploadingTdr ? 'Subiendo...' : 'Agregar TDR'}
+                                                {isUploadingTdr ? (
+                                                    <>
+                                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                        Analizando con OpenAI...
+                                                    </>
+                                                ) : (
+                                                    'Agregar TDR'
+                                                )}
                                             </button>
                                         </>
                                     )}
