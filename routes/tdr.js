@@ -322,7 +322,9 @@ router.post('/upload-and-analyze', upload.single('tdr'), async (req, res) => {
             proyecto_id: proyectoId,
             nombre_archivo: fileName,
             ruta_archivo: req.file.filename,
-            estado: 'procesado'
+            estado: 'procesado',
+            tipo_documento: 'tdr',
+            orden: 0
         };
 
         await db('documentos').insert(documentoData);

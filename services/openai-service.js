@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const fsPromises = require('fs').promises;
 const fs = require('fs');
+const { jsonrepair } = require('jsonrepair');
 const logger = require('../utils/logger');
 
 class OpenAIService {
@@ -85,7 +86,7 @@ class OpenAIService {
   crearPromptAnalisisTDR() {
     return `Eres un analista experto en TDRs de proyectos de infraestructura en Perú.
 
-Analiza el documento completo y devuelve **solo un JSON** con esta estructura exacta, siguiendo las relaciones entre tablas del sistema:
+Analiza el documento completo y devuelve **solo un JSON** con esta estructura exacta, siguiendo las relaciones entre tablas del sistema. **No incluyas comentarios, texto adicional, placeholders ni respuestas fuera del JSON. Si un dato no existe usa null o un arreglo vacío.**
 
 {
   "proyecto": {
@@ -154,7 +155,7 @@ REGLAS DE EXTRACCIÓN:
   - Incluye encabezados, subtítulos, viñetas y todo el contenido interno.
   - Si el documento usa variaciones (por ejemplo: 1er Entregable, 2do, Segundo, Tercer), detecta inteligentemente los límites.
 
-Responde SOLO el JSON con todos los niveles anidados y coherentes.
+Responde SOLO el JSON con todos los niveles anidados y coherentes. Si necesitas escribir notas, deséchalas: el resultado final debe ser JSON válido.
 `;
   }
 
@@ -162,22 +163,43 @@ Responde SOLO el JSON con todos los niveles anidados y coherentes.
   // Tolerante a variaciones: extrae JSON desde texto y normaliza estructura
   parsearRespuestaJSON(respuesta) {
     try {
-      const match = respuesta.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error('No se encontró JSON en la respuesta');
-      const obj = JSON.parse(match[0]);
+      if (!respuesta) {
+        throw new Error('Respuesta vacía');
+      }
 
-      // Normalizar
-      const proyecto = obj.proyecto || obj || {};
-      const entregables = Array.isArray(obj.entregables) ? obj.entregables : [];
+      const sinBloques = respuesta.replace(/```json|```/gi, '').trim();
+      const sinComentarios = sinBloques
+        .split('\n')
+        .filter((linea) => !linea.trim().startsWith('//'))
+        .join('\n');
+
+      const inicio = sinComentarios.indexOf('{');
+      const fin = sinComentarios.lastIndexOf('}');
+      if (inicio === -1 || fin === -1 || fin <= inicio) {
+        throw new Error('No se encontró JSON en la respuesta');
+      }
+
+      const bruto = sinComentarios.slice(inicio, fin + 1);
+      const reparado = jsonrepair(bruto);
+      const obj = JSON.parse(reparado);
+
+      const proyecto = obj.proyecto || {};
+      const entregables = Array.isArray(obj.tdr_entregable)
+        ? obj.tdr_entregable
+        : (Array.isArray(obj.entregables) ? obj.entregables : []);
       const textoEntregables = obj.texto_entregables_completo || obj.textoEntregables || null;
 
+      const proyectoNormalizado = {
+        ...proyecto,
+        nombre_proyecto: proyecto.nombre_proyecto ?? proyecto.nombre ?? null,
+        cui: proyecto.cui ?? proyecto.codigo ?? null,
+        numero_entregables: proyecto.numero_entregables ?? proyecto.total_entregables ?? null,
+        descripcion: proyecto.descripcion ?? proyecto.resumen ?? null
+      };
+
       return {
-        proyecto: {
-          nombre_proyecto: proyecto.nombre_proyecto ?? proyecto.nombre ?? null,
-          cui: proyecto.cui ?? null,
-          numero_entregables: proyecto.numero_entregables ?? null,
-          descripcion: proyecto.descripcion ?? null
-        },
+        proyecto: proyectoNormalizado,
+        tdr_entregable: entregables,
         entregables,
         texto_entregables_completo: textoEntregables
       };

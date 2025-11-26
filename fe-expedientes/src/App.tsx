@@ -15,6 +15,9 @@ import { useState, useEffect } from "react";
 import ExpedientesTecnicosUpload from "./pages/Proyectos";
 import Topografia from "./pages/Topografia";
 import ContenidoMinimo from "./pages/ContenidoMinimo";
+import Admisibilidad from "./pages/contenido-minimo/Admisibilidad";
+import IndiceProducto from "./pages/contenido-minimo/IndiceProducto";
+import Planos from "./pages/contenido-minimo/Planos";
 
 const queryClient = new QueryClient();
 
@@ -246,6 +249,9 @@ const App = () => {
                                                         <Route path="/estudios/topografico" element={<Topografia />} />
                                                         <Route path="/estudios/topografico/:proyectoId?" element={<Topografia />} />
                                                         <Route path="/contenido-minimo/:proyectoId?" element={<ContenidoMinimo />} />
+                                                        <Route path="/contenido-minimo/admisibilidad/:proyectoId?" element={<Admisibilidad />} />
+                                                        <Route path="/contenido-minimo/indice-producto/:proyectoId?" element={<IndiceProducto />} />
+                                                        <Route path="/contenido-minimo/planos/:proyectoId?" element={<Planos />} />
                                                     </Routes>
                                                 </AppLayout>
                                             </FadeIn>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
     AlertCircle,
     CheckCircle2,
@@ -11,8 +11,9 @@ import {
     Download,
 } from 'lucide-react';
 
+import { useProyectoIdFromRoute } from '@/hooks/useProyectoId';
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
-const SELECTED_PROYECTO_KEY = 'selectedProyectoId';
 
 type Documento = {
     id: string;
@@ -55,21 +56,6 @@ type StorageInfo = {
     base: string;
     tomos: Array<{ id: string; nombre?: string; dir: string; paginas: number }>;
 };
-
-function useProyectoIdFromRoute() {
-    const params = useParams<{ proyectoId?: string }>();
-    const [search] = useSearchParams();
-    const fromRoute = params.proyectoId || search.get('proyectoId') || '';
-    if (fromRoute) return fromRoute;
-    try {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem(SELECTED_PROYECTO_KEY) || '';
-        }
-    } catch {
-        // Intentionally ignored
-    }
-    return '';
-}
 
 export default function ContenidoMinimo() {
     const proyectoId = useProyectoIdFromRoute();

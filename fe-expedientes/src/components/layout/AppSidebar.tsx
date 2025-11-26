@@ -31,7 +31,15 @@ const mainItems = [
             { title: "Estudio de impacto ambiental", url: "/estudios/impacto-ambiental" },
         ],
     },
-    { title: "Contenido Minimo", url: "/contenido-minimo", icon: ListCheck },
+    {
+        title: "Contenidos Mínimos",
+        icon: ListCheck,
+        children: [
+            { title: "admisibilidad", url: "/contenido-minimo/admisibilidad" },
+            { title: "Índice del producto", url: "/contenido-minimo/indice-producto" },
+            { title: "Planos", url: "/contenido-minimo/planos" },
+        ]
+    },
     { title: "Proyectos", url: "/proyectos", icon: Folder },
 
 ];
