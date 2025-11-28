@@ -27,6 +27,8 @@
     "mammoth": "^1.11.0",
     "multer": "^2.0.2",
     "mysql2": "^3.14.3",
+    "node-fetch": "^2.6.7",
+    "form-data": "^4.0.0",
     "openai": "^6.7.0",
     "pdf-parse": "^2.4.5",
     "sonner": "^2.0.6",

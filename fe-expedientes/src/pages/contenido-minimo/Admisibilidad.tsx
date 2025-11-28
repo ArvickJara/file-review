@@ -64,6 +64,8 @@ export default function Admisibilidad() {
     const [saving, setSaving] = useState(false);
     const [mensajeGuardado, setMensajeGuardado] = useState<string | null>(null);
     const [evaluaciones, setEvaluaciones] = useState<Record<string, EvaluacionEntrega>>({});
+    const [revisandoAuto, setRevisandoAuto] = useState(false);
+    const [progresoRevision, setProgresoRevision] = useState<Record<string, 'pendiente' | 'procesando' | 'completado' | 'error'>>({});
 
     const tdr = useMemo(
         () =>
@@ -176,6 +178,60 @@ export default function Admisibilidad() {
         setEvaluaciones({});
     };
 
+    const revisarAutomaticamente = async () => {
+        if (!tomos.length || !tdr || !proyectoId) {
+            alert('Necesitas tener un TDR y al menos un entregable cargado para revisar automáticamente.');
+            return;
+        }
+
+        setRevisandoAuto(true);
+
+        // Inicializar estados
+        const progreso: Record<string, 'pendiente' | 'procesando' | 'completado' | 'error'> = {};
+        tomos.forEach(t => progreso[t.id] = 'pendiente');
+        setProgresoRevision(progreso);
+
+        // Procesar cada tomo
+        for (const tomo of tomos) {
+            try {
+                // Actualizar estado a procesando
+                setProgresoRevision(prev => ({ ...prev, [tomo.id]: 'procesando' }));
+
+                const response = await fetch(`${API_BASE}/api/expedientes_tecnicos/revisar-admisibilidad`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        proyecto_id: proyectoId,
+                        tdr_id: tdr.id,
+                        documento_id: tomo.id,
+                        orden: tomo.orden
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error HTTP ${response.status}`);
+                }
+
+                const resultado = await response.json();
+
+                // Aquí puedes procesar el resultado.data.ocr_digits para llenar automáticamente
+                // los campos de evaluación si lo deseas
+                console.log('Resultado OCR para', tomo.nombre_archivo, ':', resultado);
+
+                // Marcar como completado
+                setProgresoRevision(prev => ({ ...prev, [tomo.id]: 'completado' }));
+
+            } catch (error) {
+                console.error(`Error revisando ${tomo.id}:`, error);
+                setProgresoRevision(prev => ({ ...prev, [tomo.id]: 'error' }));
+            }
+        }
+
+        setRevisandoAuto(false);
+        setMensajeGuardado('Revisión automática completada. Revisa los resultados en la consola.');
+        setTimeout(() => setMensajeGuardado(null), 5000);
+    };
+
     const evaluarCoincidenciaFoliacion = (docId: string) => {
         const actual = evaluaciones[docId];
         if (!actual) return null;
@@ -246,6 +302,14 @@ export default function Admisibilidad() {
                         </p>
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={revisarAutomaticamente}
+                            disabled={!tomos.length || revisandoAuto}
+                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium ${tomos.length && !revisandoAuto ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+                        >
+                            {revisandoAuto ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                            {revisandoAuto ? 'Revisando...' : 'Revisar automáticamente'}
+                        </button>
                         <button
                             onClick={guardarEnLocal}
                             disabled={saving || !tomos.length}
@@ -383,6 +447,28 @@ export default function Admisibilidad() {
                                                 <p className="font-medium text-gray-900">{doc.nombre || doc.nombre_archivo || doc.id}</p>
                                                 {doc.orden && (
                                                     <p className="text-xs text-gray-500 mt-1">Orden #{doc.orden}</p>
+                                                )}
+                                                {progresoRevision[doc.id] && (
+                                                    <div className="mt-2">
+                                                        {progresoRevision[doc.id] === 'procesando' && (
+                                                            <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                                Revisando...
+                                                            </span>
+                                                        )}
+                                                        {progresoRevision[doc.id] === 'completado' && (
+                                                            <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                                                                <CheckCircle2 className="h-3 w-3" />
+                                                                Revisado
+                                                            </span>
+                                                        )}
+                                                        {progresoRevision[doc.id] === 'error' && (
+                                                            <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                                                                <AlertCircle className="h-3 w-3" />
+                                                                Error
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </td>
                                             <td className="px-4 py-4">

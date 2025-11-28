@@ -253,11 +253,11 @@ router.post('/evaluar-expediente', (req, res) => {
                 }
             }
 
-            const existingCountResult = await db('documentos')
+            const existingTomosRows = await db('documentos')
                 .where({ proyecto_id, tipo_documento: 'tomo' })
-                .count({ total: 'id' })
-                .first();
-            const existingTomos = Number(existingCountResult?.total) || 0;
+                .select('id', 'orden')
+                .orderBy('orden', 'asc');
+            const existingTomos = existingTomosRows.length;
 
             if (existingTomos >= numeroEntregables) {
                 await deleteUploadedFiles(files);
@@ -277,6 +277,19 @@ router.post('/evaluar-expediente', (req, res) => {
             }
 
             const now = Date.now();
+            const usedOrders = new Set(
+                existingTomosRows
+                    .map((row) => Number(row.orden))
+                    .filter((orden) => Number.isFinite(orden) && orden > 0)
+            );
+
+            const availableOrders = [];
+            for (let i = 1; i <= numeroEntregables; i += 1) {
+                if (!usedOrders.has(i)) {
+                    availableOrders.push(i);
+                }
+            }
+
             const documentosToInsert = files.map((file, index) => ({
                 id: `${now}-${index}-${Math.floor(Math.random() * 1e6)}`,
                 proyecto_id,
@@ -284,7 +297,7 @@ router.post('/evaluar-expediente', (req, res) => {
                 ruta_archivo: file.filename,
                 estado: 'registrado',
                 tipo_documento: 'tomo',
-                orden: existingTomos + index + 1
+                orden: availableOrders[index] ?? (existingTomos + index + 1)
             }));
 
             await db('documentos').insert(documentosToInsert);
@@ -307,6 +320,158 @@ router.post('/evaluar-expediente', (req, res) => {
             return res.status(500).json({ success: false, message: 'Error interno al registrar tomos', error: error.message });
         }
     });
+});
+
+// POST /api/expedientes_tecnicos/revisar-admisibilidad
+// Convierte PDF del entregable a imágenes y consulta la API Python para OCR
+router.post('/revisar-admisibilidad', async (req, res) => {
+    try {
+        const { documento_id, proyecto_id, tdr_id, orden } = req.body;
+
+        if (!documento_id) {
+            return res.status(400).json({ success: false, message: 'documento_id es requerido' });
+        }
+
+        // 1. Obtener documento de la BD
+        const documento = await db('documentos').where({ id: documento_id }).first();
+        if (!documento) {
+            return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+        }
+
+        // 2. Construir ruta absoluta del archivo PDF
+        const pdfPath = path.join(__dirname, '..', 'public', 'uploads', documento.ruta_archivo);
+
+        // Verificar que el archivo existe
+        try {
+            await fs.access(pdfPath);
+        } catch (err) {
+            logger.error(`Archivo no encontrado: ${pdfPath}`, 'RevisionAdmisibilidad');
+            return res.status(404).json({ success: false, message: 'Archivo PDF no encontrado en el servidor' });
+        }
+
+        // 3. Convertir PDF a imágenes usando pdf-poppler o similar
+        const { convertPdfToImages } = require('../utils/pdfConverter');
+        let imagePaths = [];
+
+        try {
+            imagePaths = await convertPdfToImages(pdfPath);
+            logger.info(`PDF convertido a ${imagePaths.length} imagen(es)`, 'RevisionAdmisibilidad');
+        } catch (conversionError) {
+            logger.error(`Error convirtiendo PDF: ${conversionError.message}`, 'RevisionAdmisibilidad');
+            return res.status(500).json({
+                success: false,
+                message: 'Error convirtiendo PDF a imágenes',
+                error: conversionError.message
+            });
+        }
+
+        // 4. Consultar API Python con las imágenes
+        const FormData = require('form-data');
+        const fetch = require('node-fetch');
+
+        const pythonApiUrl = process.env.PYTHON_API_BASE_URL || 'http://127.0.0.1:8000';
+        let ocrResults = [];
+
+        try {
+            // Procesar cada imagen
+            for (let i = 0; i < imagePaths.length; i++) {
+                const imagePath = imagePaths[i];
+                const formData = new FormData();
+                formData.append('file', await fs.readFile(imagePath), {
+                    filename: `page_${i + 1}.png`,
+                    contentType: 'image/png'
+                });
+
+                const response = await fetch(`${pythonApiUrl}/predict?ocr=true&digits_only=true&digits_engine=auto`, {
+                    method: 'POST',
+                    body: formData,
+                    headers: formData.getHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Python respondió con status ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                // Extraer solo ocr_digits que es lo que nos interesa
+                if (result.ocr_digits) {
+                    ocrResults.push({
+                        pagina: i + 1,
+                        ocr_digits: result.ocr_digits
+                    });
+                }
+            }
+
+            // 5. Limpiar imágenes temporales
+            await Promise.all(imagePaths.map(async (imgPath) => {
+                try {
+                    await fs.unlink(imgPath);
+                } catch (err) {
+                    logger.warn(`No se pudo eliminar imagen temporal ${imgPath}`, 'RevisionAdmisibilidad');
+                }
+            }));
+
+            // 6. Analizar resultados y determinar admisibilidad
+            const observaciones = [];
+            let admisible = true;
+            let puntaje = 100;
+
+            // Aquí puedes agregar lógica para analizar los ocr_digits
+            // Por ejemplo, verificar si hay números críticos, montos, etc.
+            if (ocrResults.length === 0) {
+                observaciones.push({
+                    tipo: 'advertencia',
+                    seccion: 'OCR',
+                    mensaje: 'No se pudieron extraer dígitos del documento'
+                });
+                puntaje = 70;
+            }
+
+            // 7. Retornar resultado estructurado
+            return res.status(200).json({
+                success: true,
+                data: {
+                    admisible,
+                    puntaje,
+                    ocr_digits: ocrResults,
+                    observaciones,
+                    detalles: {
+                        total_paginas: imagePaths.length,
+                        paginas_procesadas: ocrResults.length,
+                        documento_id: documento_id,
+                        orden: orden
+                    }
+                }
+            });
+
+        } catch (apiError) {
+            logger.error(`Error consultando API Python: ${apiError.message}`, 'RevisionAdmisibilidad');
+
+            // Limpiar imágenes en caso de error
+            await Promise.all(imagePaths.map(async (imgPath) => {
+                try {
+                    await fs.unlink(imgPath);
+                } catch (err) {
+                    // Ignorar errores al limpiar
+                }
+            }));
+
+            return res.status(500).json({
+                success: false,
+                message: 'Error consultando API de OCR',
+                error: apiError.message
+            });
+        }
+
+    } catch (error) {
+        logger.error(`Error en revisión de admisibilidad: ${error.message}`, 'RevisionAdmisibilidad');
+        return res.status(500).json({
+            success: false,
+            message: 'Error interno en revisión de admisibilidad',
+            error: error.message
+        });
+    }
 });
 
 module.exports = router;
