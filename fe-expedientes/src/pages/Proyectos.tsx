@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2, X, Plus, FolderOpen, Calendar, Building, Pencil, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { EntregablesProductosManager } from '../components/EntregablesProductosManager';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SELECTED_PROYECTO_KEY = 'selectedProyectoId'; // clave de localStorage
@@ -194,17 +195,13 @@ const ExpedientesTecnicosUpload: React.FC = () => {
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [showNewProjectForm, setShowNewProjectForm] = useState(false);
 
-    // Estados de TDR/Tomos
+    // Estados de TDR
     const [tdrDocumento, setTdrDocumento] = useState<TDR | null>(null);
     const [tdrEntregables, setTdrEntregables] = useState<TdrEntregable[]>([]);
-    const [availableTomos, setAvailableTomos] = useState<TDR[]>([]);
     const [tdrFile, setTdrFile] = useState<File | null>(null);
-    const [tomoFiles, setTomoFiles] = useState<File[]>([]);
     const [isUploadingTdr, setIsUploadingTdr] = useState(false);
-    const [isUploadingTomos, setIsUploadingTomos] = useState(false);
     const [tdrResult, setTdrResult] = useState<UploadResult | null>(null);
-    const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-    const [activeTab, setActiveTab] = useState<'tdr' | 'expediente'>('tdr');
+    const [activeTab, setActiveTab] = useState<'tdr' | 'productos'>('tdr');
     const [editingProyecto, setEditingProyecto] = useState<Proyecto | null>(null);
     const [editFormData, setEditFormData] = useState<EditProyectoForm>({ nombre: '', cui: '', numero_entregables: '', descripcion: '' });
     const [isSavingProyecto, setIsSavingProyecto] = useState(false);
@@ -217,18 +214,6 @@ const ExpedientesTecnicosUpload: React.FC = () => {
         () => availableProyectos.find((p) => p.id === selectedProyecto),
         [availableProyectos, selectedProyecto]
     );
-    const tomosRegistrados = availableTomos.length;
-    const entregablesDefinidos = tdrEntregables.length > 0
-        ? tdrEntregables.length
-        : selectedProyectoInfo?.numero_entregables;
-    const hasEntregaLimit = typeof entregablesDefinidos === 'number' && (entregablesDefinidos as number) > 0;
-    const maxEntregables = hasEntregaLimit ? Number(entregablesDefinidos) : undefined;
-    const cupoRestante = hasEntregaLimit ? Math.max((entregablesDefinidos as number) - tomosRegistrados, 0) : undefined;
-    const cupoDisponibleParaSeleccion = hasEntregaLimit
-        ? Math.max((cupoRestante as number) - tomoFiles.length, 0)
-        : undefined;
-    const reachedUploadLimit = hasEntregaLimit && typeof cupoRestante === 'number' && cupoRestante <= 0;
-    const noSlotsForPendingSelection = hasEntregaLimit && typeof cupoDisponibleParaSeleccion === 'number' && cupoDisponibleParaSeleccion <= 0;
 
     // Restaurar selección desde localStorage y cargar proyectos
     useEffect(() => {
@@ -255,10 +240,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
     useEffect(() => {
         if (selectedProyecto && !showNewProjectForm) {
             loadAvailableTdrs();
-            loadAvailableTomos();
         } else {
             setTdrEntregables([]);
-            setAvailableTomos([]);
             setTdrDocumento(null);
         }
     }, [selectedProyecto, showNewProjectForm]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -349,7 +332,6 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                 setSelectedProyecto('');
                 setTdrDocumento(null);
                 setTdrEntregables([]);
-                setAvailableTomos([]);
             }
             await loadAvailableProyectos();
             setProjectPendingDeletion(null);
@@ -362,49 +344,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
     };
 
     // Solo tomos (orden > 0)
-    const loadAvailableTomos = async () => {
-        if (!selectedProyecto) return;
-        try {
-            const response = await fetch(`${API_BASE}/api/expedientes_tecnicos/documentos/${selectedProyecto}`);
-            if (response.ok) {
-                const data = await response.json();
-                const documentos: TDR[] = Array.isArray(data.documentos) ? data.documentos : [];
-                if (!documentos.length) {
-                    setTdrDocumento(null);
-                    setAvailableTomos([]);
-                    return;
-                }
 
-                const parseDateValue = (doc: TDR) => {
-                    const time = new Date(doc.fecha_creacion || doc.fecha_subida || '').getTime();
-                    return Number.isNaN(time) ? 0 : time;
-                };
-
-                const sortedDocs = [...documentos].sort((a, b) => parseDateValue(b) - parseDateValue(a));
-
-                const tdrCandidates = sortedDocs.filter((doc) => {
-                    const tipo = (doc.tipo_documento || '').toLowerCase();
-                    if (tipo) return tipo === 'tdr';
-                    const ordenValue = typeof doc.orden === 'number' ? doc.orden : 0;
-                    return ordenValue === 0;
-                });
-
-                // Si la API no marca el documento como TDR, asumimos que el más reciente sin orden > 0 es el correcto
-                const latestTdr = tdrCandidates[0] || sortedDocs[0] || null;
-                setTdrDocumento(latestTdr || null);
-
-                const tomos: TDR[] = sortedDocs.filter((doc) => {
-                    const tipo = (doc.tipo_documento || '').toLowerCase();
-                    if (tipo) return tipo === 'tomo';
-                    const ordenValue = typeof doc.orden === 'number' ? doc.orden : 0;
-                    return ordenValue > 0;
-                });
-                setAvailableTomos(tomos);
-            }
-        } catch (error) {
-            console.error('Error cargando tomos:', error);
-        }
-    };
 
     // Solo TDRs (orden = 0)
     const loadAvailableTdrs = async () => {
@@ -415,6 +355,13 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                 const data = await response.json();
                 const entregables: TdrEntregable[] = Array.isArray(data.entregables) ? data.entregables : [];
                 setTdrEntregables(entregables);
+
+                // También cargar el documento TDR si existe
+                if (data.tdr_documento) {
+                    setTdrDocumento(data.tdr_documento);
+                } else {
+                    setTdrDocumento(null);
+                }
             }
         } catch (error) {
             console.error('Error cargando TDRs:', error);
@@ -428,7 +375,6 @@ const ExpedientesTecnicosUpload: React.FC = () => {
         setSelectedProyecto(''); // limpiar selección y localStorage
         setTdrDocumento(null);
         setTdrEntregables([]);
-        setAvailableTomos([]);
     };
 
     // Validar archivo TDR
@@ -539,12 +485,11 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                 // Recargar datos
                 await loadAvailableProyectos();
                 await loadAvailableTdrs();
-                await loadAvailableTomos();
 
-                // Limpiar y cambiar de pestaña
+                // Limpiar y cambiar de pestaña a productos
                 setTdrFile(null);
                 setShowNewProjectForm(false);
-                setActiveTab('expediente');
+                setActiveTab('productos');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             } else {
                 setTdrResult({
@@ -566,41 +511,7 @@ const ExpedientesTecnicosUpload: React.FC = () => {
     };
 
     // Agregar tomos (solo PDF)
-    const handleAddTomo = (files: FileList | null) => {
-        if (!files) return;
-        const limit = hasEntregaLimit ? Math.max((maxEntregables as number) - availableTomos.length - tomoFiles.length, 0) : undefined;
-        if (typeof limit === 'number' && limit <= 0) {
-            alert('Ya alcanzaste el número máximo de entregables permitidos por el TDR. Elimina alguno antes de agregar nuevos.');
-            return;
-        }
 
-        const validFiles = Array.from(files).filter((f) => f.type === 'application/pdf');
-        const invalidFiles = Array.from(files).filter((f) => f.type !== 'application/pdf');
-
-        if (invalidFiles.length > 0) {
-            alert(`Se omitieron ${invalidFiles.length} archivo(s) que no son PDF. Los entregables deben ser archivos PDF escaneados.`);
-        }
-
-        let filesToAppend = validFiles;
-        if (typeof limit === 'number') {
-            filesToAppend = validFiles.slice(0, limit);
-            if (validFiles.length > filesToAppend.length) {
-                alert(`Solo puedes agregar ${limit} entregable(s) adicionales para no superar los ${maxEntregables!} definidos en el TDR.`);
-            }
-        }
-
-        if (filesToAppend.length > 0) {
-            setTomoFiles((prev) => [...prev, ...filesToAppend]);
-        }
-    };
-
-    const handleRemoveTomo = (index: number) => {
-        setTomoFiles((prev) => prev.filter((_, i) => i !== index));
-    };
-
-    const promptDeleteEntregable = (documento: TDR) => {
-        setDocumentPendingDeletion(documento);
-    };
 
     const confirmDeleteEntregable = async () => {
         if (!documentPendingDeletion) return;
@@ -613,7 +524,8 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                 throw new Error('No se pudo eliminar el entregable');
             }
             setDocumentPendingDeletion(null);
-            await loadAvailableTomos();
+            // Recargar TDRs para refrescar el estado
+            await loadAvailableTdrs();
         } catch (error) {
             console.error('Error eliminando entregable:', error);
             alert('No se pudo eliminar el entregable. Intenta nuevamente.');
@@ -625,42 +537,6 @@ const ExpedientesTecnicosUpload: React.FC = () => {
     const cancelDeleteEntregable = () => setDocumentPendingDeletion(null);
 
     // Cargar entregables (solo guarda archivos)
-    const handleUploadEntregables = async () => {
-        const tdrId = tdrDocumento?.id;
-        if (!tdrId || !selectedProyecto || tomoFiles.length === 0) return;
-
-        if (hasEntregaLimit && typeof cupoRestante === 'number' && tomoFiles.length > cupoRestante) {
-            setUploadResult({
-                success: false,
-                message: `Solo puedes subir ${cupoRestante} tomo(s) adicionales para cumplir con los ${maxEntregables!} entregables definidos en el TDR.`
-            });
-            return;
-        }
-
-        setIsUploadingTomos(true);
-        setUploadResult(null);
-
-        try {
-            const formData = new FormData();
-            formData.append('tdrId', tdrId);
-            formData.append('proyecto_id', selectedProyecto);
-            tomoFiles.forEach((file) => formData.append('tomos', file));
-
-            const resp = await fetch(`${API_BASE}/api/expedientes_tecnicos/evaluar-expediente`, { method: 'POST', body: formData });
-            const result: UploadResult = await resp.json();
-            setUploadResult(result);
-
-            if (result.success) {
-                setTomoFiles([]);
-                await loadAvailableTomos(); // refrescar lista de tomos existentes
-            }
-        } catch (error) {
-            setUploadResult({ success: false, message: 'Error de conexión al guardar archivos' });
-        } finally {
-            setIsUploadingTomos(false);
-        }
-    };
-
     const formatFileSize = (bytes: number) => {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -889,13 +765,13 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                 TDR del Proyecto
                             </button>
                             <button
-                                onClick={() => setActiveTab('expediente')}
-                                className={`py-2 px-4 border-b-2 font-medium text-sm ${activeTab === 'expediente'
+                                onClick={() => setActiveTab('productos')}
+                                className={`py-2 px-4 border-b-2 font-medium text-sm ${activeTab === 'productos'
                                     ? 'border-blue-500 text-blue-600'
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
-                                Cargar Entregables
+                                Gestionar Productos
                             </button>
                         </nav>
                     </div>
@@ -927,13 +803,9 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                 </div>
                                                 <CheckCircle className="h-5 w-5 text-blue-600" />
                                             </div>
-                                            {hasEntregaLimit ? (
+                                            {tdrEntregables.length > 0 && (
                                                 <p className="mt-3 text-sm text-blue-900">
-                                                    Entregables definidos: <strong>{maxEntregables!}</strong>
-                                                </p>
-                                            ) : (
-                                                <p className="mt-3 text-sm text-blue-900">
-                                                    Este TDR aún no define la cantidad de entregables.
+                                                    Entregables definidos: <strong>{tdrEntregables.length}</strong>
                                                 </p>
                                             )}
                                         </div>
@@ -1041,179 +913,22 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Tab Entregables: muestra archivos existentes y permite nuevas cargas */}
-                        {activeTab === 'expediente' && (
+                        {/* Tab Productos: gestión de entregables y productos */}
+                        {activeTab === 'productos' && (
                             <div className="space-y-6">
-                                <h3 className="text-lg font-medium text-gray-900">Carga de Entregables</h3>
+                                <div className="mb-4">
+                                    <h3 className="text-lg font-medium text-gray-900">Gestión de Productos por Entregable</h3>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                        Organiza los productos (documentos) que conforman cada entregable del proyecto. Los productos son los archivos individuales (.pdf, .docx) que componen cada entregable.
+                                    </p>
+                                </div>
 
-                                {!tdrDocumento ? (
-                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                        <div className="flex items-center space-x-3">
-                                            <AlertCircle className="h-5 w-5 text-yellow-600" />
-                                            <p className="text-sm text-yellow-800">
-                                                Sube o genera el TDR del proyecto en la pestaña anterior para habilitar la carga de entregables.
-                                            </p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                            <div className="flex items-center space-x-3">
-                                                <CheckCircle className="h-5 w-5 text-green-600" />
-                                                <p className="text-sm text-green-800">
-                                                    TDR de referencia: {tdrDocumento.nombre || tdrDocumento.nombre_archivo || 'TDR del proyecto'}
-                                                    {hasEntregaLimit && (
-                                                        <>
-                                                            {' '}
-                                                            • Entregables definidos: {maxEntregables!}
-                                                        </>
-                                                    )}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        {/* Entregables ya cargados (orden > 0) */}
-                                        {availableTomos.length > 0 && (
-                                            <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                                <h4 className="text-sm font-medium text-gray-900 mb-2">
-                                                    Entregables registrados ({availableTomos.length})
-                                                </h4>
-                                                <div className="space-y-2">
-                                                    {availableTomos.map((t) => (
-                                                        <div key={t.id} className="p-2 bg-gray-50 rounded flex items-center justify-between">
-                                                            <div className="flex items-center space-x-2">
-                                                                <FileText className="h-4 w-4 text-gray-600" />
-                                                                <span className="text-sm text-gray-900">
-                                                                    {t.orden ? `Entregable ${t.orden}: ` : ''}
-                                                                    {t.nombre || t.nombre_archivo || t.id}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center space-x-3">
-                                                                <span className="text-xs text-gray-500">
-                                                                    {formatDocumentoFecha(t)}
-                                                                </span>
-                                                                <button
-                                                                    onClick={() => promptDeleteEntregable(t)}
-                                                                    className="text-red-500 hover:text-red-700 text-xs font-medium"
-                                                                >
-                                                                    Eliminar
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Subir tomos */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Entregables (archivos PDF escaneados):</label>
-                                            {hasEntregaLimit && (
-                                                <p className="text-xs text-gray-500 mb-2">
-                                                    Entregables permitidos: <strong>{maxEntregables!}</strong> • Registrados: {tomosRegistrados} • Disponibles para subir: {cupoRestante}
-                                                </p>
-                                            )}
-
-                                            <div
-                                                className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${noSlotsForPendingSelection ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60' : 'border-gray-300 hover:border-gray-400'
-                                                    }`}
-                                            >
-                                                <Plus className="mx-auto h-8 w-8 text-gray-400" />
-                                                <div className="mt-2">
-                                                    <label
-                                                        htmlFor="tomos-files"
-                                                        className={`cursor-pointer ${noSlotsForPendingSelection ? 'pointer-events-none text-gray-400' : ''}`}
-                                                    >
-                                                        <span className="block text-sm font-medium text-gray-900">Agregar entregables</span>
-                                                        <span className="block text-xs text-gray-500">Solo PDF</span>
-                                                    </label>
-                                                    <input
-                                                        id="tomos-files"
-                                                        type="file"
-                                                        className="hidden"
-                                                        accept=".pdf,application/pdf"
-                                                        multiple
-                                                        onChange={(e) => handleAddTomo(e.target.files)}
-                                                        disabled={noSlotsForPendingSelection}
-                                                    />
-                                                </div>
-                                            </div>
-                                            {reachedUploadLimit && (
-                                                <p className="mt-2 text-xs text-red-600">
-                                                    Ya registraste todos los entregables permitidos por el TDR. Si necesitas reemplazar alguno, bórralo antes de subir un nuevo archivo.
-                                                </p>
-                                            )}
-
-                                            {/* Lista de tomos a subir */}
-                                            {tomoFiles.length > 0 && (
-                                                <div className="mt-4 space-y-2">
-                                                    <h4 className="text-sm font-medium text-gray-900">Entregables seleccionados ({tomoFiles.length}):</h4>
-                                                    {tomoFiles.map((file, index) => (
-                                                        <div key={`${file.name}-${index}`} className="p-3 bg-gray-50 rounded-lg">
-                                                            <div className="flex items-center justify-between">
-                                                                <div className="flex items-center space-x-2">
-                                                                    <FileText className="h-4 w-4 text-gray-600" />
-                                                                    <div>
-                                                                        <p className="text-sm font-medium text-gray-900">
-                                                                            Archivo {index + 1}: {file.name}
-                                                                        </p>
-                                                                        <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <button onClick={() => handleRemoveTomo(index)} className="text-red-600 hover:text-red-800">
-                                                                    <X className="h-4 w-4" />
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-
-                                                    <button
-                                                        onClick={handleUploadEntregables}
-                                                        disabled={isUploadingTomos || tomoFiles.length === 0}
-                                                        className="w-full mt-4 bg-green-600 text-white py-3 px-4 rounded-md font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center space-x-2"
-                                                    >
-                                                        {isUploadingTomos ? (
-                                                            <>
-                                                                <Loader2 className="h-4 w-4 animate-spin" />
-                                                                <span>Guardando archivos...</span>
-                                                            </>
-                                                        ) : (
-                                                            <span>Guardar entregables ({tomoFiles.length} archivos)</span>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Resultado de la carga */}
-                                        {uploadResult && (
-                                            <div className={`p-4 rounded-lg ${uploadResult.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                                                <div className="flex items-start space-x-3">
-                                                    {uploadResult.success ? (
-                                                        <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                                                    ) : (
-                                                        <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                                                    )}
-                                                    <div className="flex-1">
-                                                        <p className={`text-sm font-medium ${uploadResult.success ? 'text-green-900' : 'text-red-900'}`}>
-                                                            {uploadResult.message}
-                                                        </p>
-
-                                                        {uploadResult.success && uploadResult.resumen && (
-                                                            <div className="mt-3 text-xs text-green-800">
-                                                                <p>
-                                                                    Total: {uploadResult.resumen.total_tomos} | Exitosos:{' '}
-                                                                    {uploadResult.resumen.tomos_procesados_exitosamente} | Errores:{' '}
-                                                                    {uploadResult.resumen.tomos_con_errores}
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
+                                <EntregablesProductosManager
+                                    proyectoId={selectedProyecto}
+                                    onProductoSelected={(productoId) => {
+                                        console.log('Producto seleccionado:', productoId);
+                                    }}
+                                />
                             </div>
                         )}
                     </div>

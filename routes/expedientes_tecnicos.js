@@ -131,6 +131,19 @@ router.get('/tdrs/:proyectoId', async (req, res) => {
             secciones_estudio: seccionesPorEntregable[e.id] || []
         }));
 
+        // Buscar el documento TDR del proyecto
+        const tdrDocumento = await db('documentos')
+            .where({
+                proyecto_id: proyectoId,
+                tipo_documento: 'tdr'
+            })
+            .orWhere(function () {
+                this.where('proyecto_id', proyectoId)
+                    .andWhere('orden', 0);
+            })
+            .orderBy('fecha_subida', 'desc')
+            .first();
+
         return res.status(200).json({
             success: true,
             proyecto: {
@@ -142,7 +155,8 @@ router.get('/tdrs/:proyectoId', async (req, res) => {
                 fecha_creacion: proyecto.fecha_creacion,
             },
             entregables: entregablesConJerarquia,
-            tdrs: entregablesConJerarquia
+            tdrs: entregablesConJerarquia,
+            tdr_documento: tdrDocumento || null
         });
 
     } catch (error) {
@@ -171,6 +185,214 @@ router.get('/documentos/:proyectoId', async (req, res) => {
         return res.status(200).json({ success: true, documentos: documentos.map(mapDocumento) });
     } catch (error) {
         logger.error(`Error listando documentos del proyecto: ${error.message}`, 'ExpedientesDocs');
+        return res.status(500).json({ success: false, message: 'Error interno', error: error.message });
+    }
+});
+
+// GET /api/expedientes_tecnicos/documento/:documentoId/download
+// Descarga el archivo PDF de un documento específico
+router.get('/documento/:documentoId/download', async (req, res) => {
+    try {
+        const { documentoId } = req.params;
+
+        const documento = await db('documentos').where({ id: documentoId }).first();
+        if (!documento) {
+            return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+        }
+
+        if (!documento.ruta_archivo) {
+            return res.status(404).json({ success: false, message: 'El documento no tiene archivo asociado' });
+        }
+
+        const absolutePath = path.join(__dirname, '..', 'public', 'uploads', documento.ruta_archivo);
+
+        // Verificar que el archivo existe
+        try {
+            await fs.access(absolutePath);
+        } catch (err) {
+            logger.error(`Archivo no encontrado: ${absolutePath}`, 'ExpedientesDocs');
+            return res.status(404).json({ success: false, message: 'Archivo no encontrado en el servidor' });
+        }
+
+        // Enviar el archivo
+        res.download(absolutePath, documento.nombre_archivo || 'documento.pdf', (err) => {
+            if (err) {
+                logger.error(`Error al descargar archivo: ${err.message}`, 'ExpedientesDocs');
+                if (!res.headersSent) {
+                    res.status(500).json({ success: false, message: 'Error al descargar archivo' });
+                }
+            }
+        });
+    } catch (error) {
+        logger.error(`Error descargando documento: ${error.message}`, 'ExpedientesDocs');
+        return res.status(500).json({ success: false, message: 'Error interno', error: error.message });
+    }
+});
+
+// POST /api/expedientes_tecnicos/documento/:documentoId/verificar-rpa
+// Verifica hojas en blanco y legibilidad usando el RPA de Python
+router.post('/documento/:documentoId/verificar-rpa', async (req, res) => {
+    try {
+        const { documentoId } = req.params;
+
+        const documento = await db('documentos').where({ id: documentoId }).first();
+        if (!documento) {
+            return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+        }
+
+        if (!documento.ruta_archivo) {
+            return res.status(404).json({ success: false, message: 'El documento no tiene archivo asociado' });
+        }
+
+        const absolutePath = path.join(__dirname, '..', 'public', 'uploads', documento.ruta_archivo);
+
+        // Verificar que el archivo existe
+        try {
+            await fs.access(absolutePath);
+        } catch (err) {
+            logger.error(`Archivo no encontrado: ${absolutePath}`, 'ExpedientesDocs');
+            return res.status(404).json({ success: false, message: 'Archivo no encontrado en el servidor' });
+        }
+
+        // Llamar al RPA de Python
+        const { spawn } = require('child_process');
+        const rpaPath = path.join(__dirname, '..', '..', 'Admisibilidad');
+
+        // Usar el Python del entorno virtual si existe
+        const pythonExe = path.join(rpaPath, 'env', 'Scripts', 'python.exe');
+        const pythonCmd = require('fs').existsSync(pythonExe) ? pythonExe : 'python';
+
+        logger.info(`Ejecutando RPA para documento: ${documento.nombre_archivo}`, 'ExpedientesDocs');
+        logger.info(`Python ejecutable: ${pythonCmd}`, 'ExpedientesDocs');
+        logger.info(`Archivo PDF: ${absolutePath}`, 'ExpedientesDocs');
+
+        const pythonCode = `
+import sys
+import os
+import json
+from dataclasses import asdict
+from datetime import datetime
+sys.path.insert(0, '${rpaPath.replace(/\\/g, '/')}' + '/src')
+
+try:
+    from verificador_admisibilidad import VerificadorAdmisibilidad
+    
+    # Crear verificador
+    verificador = VerificadorAdmisibilidad('${absolutePath.replace(/\\/g, '/')}')
+    
+    # Cargar documento
+    if not verificador._cargar_documento():
+        resultado = verificador._generar_resultado_error()
+    else:
+        # Ejecutar SOLO las verificaciones necesarias:
+        # 1. Hojas en blanco
+        # 2. Legibilidad
+        print("Iniciando verificacion de: ${absolutePath.replace(/\\/g, '/')}")
+        print(f"Fecha y hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        verificador._verificar_hojas_blanco()
+        verificador._verificar_ilegibilidad()
+        
+        # Preparar resultados
+        resultado = verificador._preparar_resultados()
+    
+    # Convertir dataclasses a dict para JSON
+    if 'resultados' in resultado:
+        resultado['resultados'] = [asdict(r) for r in resultado['resultados']]
+    
+    print(json.dumps(resultado, ensure_ascii=False))
+except Exception as e:
+    import traceback
+    error_info = {
+        'error': str(e),
+        'traceback': traceback.format_exc(),
+        'tipo': type(e).__name__
+    }
+    print(json.dumps(error_info, ensure_ascii=False))
+    sys.exit(1)
+`;
+
+        const python = spawn(pythonCmd, ['-c', pythonCode]);
+
+        let outputData = '';
+        let errorData = '';
+
+        python.stdout.on('data', (data) => {
+            outputData += data.toString();
+        });
+
+        python.stderr.on('data', (data) => {
+            errorData += data.toString();
+        });
+
+        python.on('close', (code) => {
+            logger.info(`Proceso Python finalizado con código: ${code}`, 'ExpedientesDocs');
+            logger.info(`Output completo: ${outputData}`, 'ExpedientesDocs');
+            logger.info(`Errores: ${errorData}`, 'ExpedientesDocs');
+
+            if (code !== 0) {
+                logger.error(`Error en RPA (código ${code}): ${errorData}`, 'ExpedientesDocs');
+
+                // Intentar parsear el error como JSON
+                try {
+                    const errorJson = JSON.parse(outputData.trim().split('\n').pop());
+                    if (errorJson.error) {
+                        return res.status(500).json({
+                            success: false,
+                            message: 'Error al ejecutar verificación RPA',
+                            error: errorJson.error,
+                            traceback: errorJson.traceback,
+                            tipo: errorJson.tipo
+                        });
+                    }
+                } catch (e) {
+                    // Si no es JSON, devolver el error tal cual
+                }
+
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error al ejecutar verificación RPA',
+                    error: errorData,
+                    output: outputData
+                });
+            }
+
+            try {
+                // Extraer solo el JSON del output (última línea)
+                const lines = outputData.trim().split('\n');
+                const jsonLine = lines[lines.length - 1];
+                const resultado = JSON.parse(jsonLine);
+
+                // Verificar si hay error en el resultado
+                if (resultado.error) {
+                    logger.error(`Error en verificación RPA: ${resultado.error}`, 'ExpedientesDocs');
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Error en verificación RPA',
+                        error: resultado.error,
+                        traceback: resultado.traceback
+                    });
+                }
+
+                return res.status(200).json({
+                    success: true,
+                    documento: documento.nombre_archivo,
+                    resultado: resultado
+                });
+            } catch (parseError) {
+                logger.error(`Error al parsear resultado RPA: ${parseError.message}`, 'ExpedientesDocs');
+                logger.error(`Output recibido: ${outputData}`, 'ExpedientesDocs');
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error al procesar resultado de verificación',
+                    parseError: parseError.message,
+                    output: outputData
+                });
+            }
+        });
+
+    } catch (error) {
+        logger.error(`Error en verificación RPA: ${error.message}`, 'ExpedientesDocs');
         return res.status(500).json({ success: false, message: 'Error interno', error: error.message });
     }
 });

@@ -174,6 +174,18 @@ router.post('/upload-and-analyze', upload.single('tdr'), async (req, res) => {
 
                         entregablesInsertados++;
 
+                        // Insertar productos si existen
+                        const productos = Array.isArray(ent.productos) ? ent.productos : [];
+                        for (let p = 0; p < productos.length; p++) {
+                            const prod = productos[p] || {};
+                            await trx('tdr_producto').insert({
+                                entregable_id: entregableId,
+                                nombre_producto: prod.nombre_producto || `Producto ${p + 1}`,
+                                descripcion: prod.descripcion || null,
+                                orden: prod.orden || (p + 1)
+                            });
+                        }
+
                         const secciones = Array.isArray(ent.secciones_estudio) ? ent.secciones_estudio : [];
                         for (let j = 0; j < secciones.length; j++) {
                             const sec = secciones[j] || {};
@@ -243,6 +255,18 @@ router.post('/upload-and-analyze', upload.single('tdr'), async (req, res) => {
                             porcentaje_pago: porcentajePago
                         });
                         entregablesInsertados++;
+
+                        // Insertar productos si existen
+                        const productos = Array.isArray(ent.productos) ? ent.productos : [];
+                        for (let p = 0; p < productos.length; p++) {
+                            const prod = productos[p] || {};
+                            await trx('tdr_producto').insert({
+                                entregable_id: entregableId,
+                                nombre_producto: prod.nombre_producto || `Producto ${p + 1}`,
+                                descripcion: prod.descripcion || null,
+                                orden: prod.orden || (p + 1)
+                            });
+                        }
 
                         const secciones = Array.isArray(ent.secciones_estudio) ? ent.secciones_estudio : [];
                         for (let j = 0; j < secciones.length; j++) {

@@ -16,9 +16,12 @@
   Table documentos {
     id varchar [pk]
     proyecto_id varchar [not null]
+    producto_id integer // Relación con productos (opcional)
     nombre_archivo varchar [not null]
     ruta_archivo varchar [not null]
     estado varchar [default: 'pendiente'] // e.g., 'pendiente', 'en_revision', 'aprobado'
+    orden integer [default: 1]
+    tipo_documento varchar // e.g., 'tdr', 'entregable', 'producto'
     fecha_subida timestamp [default: `now()`]
   }
 
@@ -40,7 +43,17 @@
     id integer [pk, increment]
     proyecto_id varchar [not null]
     nombre_entregable varchar [not null] // e.g., 'PRIMER ENTREGABLE'
-    plazo_dias integer // Añadimos el campo que sugeriste
+    plazo_dias integer
+    porcentaje_pago decimal(5,2)
+    created_at timestamp [default: `now()`]
+  }
+
+  Table tdr_producto {
+    id integer [pk, increment]
+    entregable_id integer [not null]
+    nombre_producto varchar [not null] // e.g., 'Informe Técnico', 'Planos de Arquitectura'
+    descripcion text
+    orden integer [default: 1]
     created_at timestamp [default: `now()`]
   }
 
@@ -79,7 +92,9 @@
 
   // Relaciones del Contexto
   Ref: tdr_entregable.proyecto_id > proyecto.id [delete: cascade]
+  Ref: tdr_producto.entregable_id > tdr_entregable.id [delete: cascade]
   Ref: documentos.proyecto_id > proyecto.id [delete: cascade]
+  Ref: documentos.producto_id > tdr_producto.id [delete: set null]
   Ref: analisis.documento_id > documentos.id [delete: cascade]
 
   // Relaciones de la Jerarquía del TDR

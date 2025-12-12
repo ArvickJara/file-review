@@ -103,7 +103,15 @@ Analiza el documento completo y devuelve **solo un JSON** con esta estructura ex
       "id": "uuid o autoincrementable",
       "proyecto_id": "referencia al id del proyecto",
       "nombre_entregable": "string",
+      "porcentaje_pago": number o null,
       "created_at": "YYYY-MM-DD HH:mm:ss",
+      "productos": [
+        {
+          "nombre_producto": "string",
+          "descripcion": "string o null",
+          "orden": number
+        }
+      ],
       "tdr_seccion_estudio": [
         {
           "id": "uuid o autoincrementable",
@@ -142,6 +150,11 @@ REGLAS DE EXTRACCIÓN:
 
 2. **tdr_entregable**:
    - nombre_entregable: el nombre del entregable será el número de entregables pero escrita.
+   - porcentaje_pago: porcentaje del pago asociado al entregable (si se menciona).
+   - productos: arreglo de productos/documentos que conforman el entregable. Busca listas, viñetas o menciones de productos específicos como:
+     * "Informe de ...", "Memoria Descriptiva de ...", "Planos de ...", "Estudio de ...", etc.
+     * Cada producto debe tener nombre_producto (requerido), descripcion (opcional) y orden (numérico).
+
 3. **tdr_seccion_estudio**:
    - nombre: nombre de los estudios o informes que contiene cada entregable.
 4. **tdr_tipo_documento**:
