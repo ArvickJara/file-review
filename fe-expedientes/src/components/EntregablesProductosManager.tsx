@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, X, FileText, ChevronRight, ChevronDown, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -40,6 +41,7 @@ export const EntregablesProductosManager: React.FC<EntregablesProductosManagerPr
     proyectoId,
     onProductoSelected
 }) => {
+    const navigate = useNavigate();
     const [entregables, setEntregables] = useState<Entregable[]>([]);
     const [expandedEntregables, setExpandedEntregables] = useState<Set<number>>(new Set());
     const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set());
@@ -229,6 +231,11 @@ export const EntregablesProductosManager: React.FC<EntregablesProductosManagerPr
         }
     };
 
+    const analizarIndice = (productoId: number) => {
+        // Navegar a la vista de análisis de índice
+        navigate(`/contenido-minimo/indice-producto/${proyectoId}?productoId=${productoId}`);
+    };
+
     const seleccionarProducto = (productoId: number) => {
         setSelectedProducto(productoId);
         if (onProductoSelected) {
@@ -281,11 +288,6 @@ export const EntregablesProductosManager: React.FC<EntregablesProductosManagerPr
                                     <div className="flex-1">
                                         <h4 className="font-medium text-gray-900">{entregable.nombre_entregable}</h4>
                                         <div className="flex items-center space-x-4 mt-1">
-                                            {entregable.porcentaje_pago && (
-                                                <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
-                                                    {entregable.porcentaje_pago}% pago
-                                                </span>
-                                            )}
                                             <span className="text-xs text-gray-500">
                                                 {entregable.productos?.length || 0} producto(s)
                                             </span>
@@ -305,8 +307,8 @@ export const EntregablesProductosManager: React.FC<EntregablesProductosManagerPr
                                                     <div
                                                         onClick={() => seleccionarProducto(producto.id)}
                                                         className={`flex items-center justify-between p-3 bg-white rounded border cursor-pointer transition-colors ${selectedProducto === producto.id
-                                                                ? 'border-blue-500 bg-blue-50'
-                                                                : 'border-gray-200 hover:border-gray-300'
+                                                            ? 'border-blue-500 bg-blue-50'
+                                                            : 'border-gray-200 hover:border-gray-300'
                                                             }`}
                                                     >
                                                         <div className="flex items-center space-x-2 flex-1">
@@ -353,18 +355,29 @@ export const EntregablesProductosManager: React.FC<EntregablesProductosManagerPr
                                                                 <span className="text-xs font-medium text-gray-700">
                                                                     Archivos del producto
                                                                 </span>
-                                                                <label className="cursor-pointer px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs hover:bg-blue-100 flex items-center space-x-1">
-                                                                    <Upload className="h-3 w-3" />
-                                                                    <span>Subir archivos</span>
-                                                                    <input
-                                                                        type="file"
-                                                                        multiple
-                                                                        className="hidden"
-                                                                        accept=".pdf,.doc,.docx"
-                                                                        onChange={(e) => handleFileUpload(producto.id, e.target.files)}
-                                                                        disabled={uploadingFiles[producto.id]}
-                                                                    />
-                                                                </label>
+                                                                <div className="flex items-center space-x-2">
+                                                                    <button
+                                                                        onClick={() => analizarIndice(producto.id)}
+                                                                        disabled={!archivosProducto[producto.id]?.length}
+                                                                        className="px-2 py-1 bg-green-50 text-green-600 rounded text-xs hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                                                                        title="Analizar índice del producto"
+                                                                    >
+                                                                        <FileText className="h-3 w-3" />
+                                                                        <span>Analizar Índice</span>
+                                                                    </button>
+                                                                    <label className="cursor-pointer px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs hover:bg-blue-100 flex items-center space-x-1">
+                                                                        <Upload className="h-3 w-3" />
+                                                                        <span>Subir archivos</span>
+                                                                        <input
+                                                                            type="file"
+                                                                            multiple
+                                                                            className="hidden"
+                                                                            accept=".pdf,.doc,.docx"
+                                                                            onChange={(e) => handleFileUpload(producto.id, e.target.files)}
+                                                                            disabled={uploadingFiles[producto.id]}
+                                                                        />
+                                                                    </label>
+                                                                </div>
                                                             </div>
                                                             {uploadingFiles[producto.id] && (
                                                                 <div className="text-xs text-gray-500 text-center py-2">

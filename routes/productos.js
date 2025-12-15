@@ -5,6 +5,8 @@ const logger = require('../utils/logger');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const indiceAnalyzer = require('../services/indiceAnalyzer');
 
 // Configuración de multer para subir archivos
 const storage = multer.diskStorage({
@@ -260,7 +262,9 @@ router.post('/productos/:id/archivos', upload.array('archivos', 10), async (req,
         // Insertar archivos en la base de datos
         const archivosInsertados = [];
         for (const file of files) {
-            const [id] = await db('documentos').insert({
+            const documentoId = crypto.randomUUID();
+            await db('documentos').insert({
+                id: documentoId,
                 proyecto_id: proyecto_id,
                 producto_id: productoId,
                 nombre_archivo: file.originalname,
@@ -271,7 +275,7 @@ router.post('/productos/:id/archivos', upload.array('archivos', 10), async (req,
             });
 
             archivosInsertados.push({
-                id,
+                id: documentoId,
                 nombre_archivo: file.originalname,
                 ruta_archivo: `/uploads/${file.filename}`
             });
@@ -301,6 +305,193 @@ router.post('/productos/:id/archivos', upload.array('archivos', 10), async (req,
             success: false,
             message: 'Error guardando archivos',
             error: error.message
+        });
+    }
+});
+
+// Eliminar un archivo de un producto
+router.delete('/documentos/:id', async (req, res) => {
+    try {
+        const { id: documentoId } = req.params;
+
+        const documento = await db('documentos').where({ id: documentoId }).first();
+        if (!documento) {
+            return res.status(404).json({
+                success: false,
+                message: 'Documento no encontrado'
+            });
+        }
+
+        // Eliminar de la base de datos
+        await db('documentos').where({ id: documentoId }).del();
+
+        // Intentar eliminar el archivo físico
+        if (documento.ruta_archivo) {
+            const absolutePath = path.join(__dirname, '..', 'public', documento.ruta_archivo);
+            try {
+                if (fs.existsSync(absolutePath)) {
+                    fs.unlinkSync(absolutePath);
+                }
+            } catch (err) {
+                logger.warn(`No se pudo eliminar archivo físico ${absolutePath}: ${err.message}`, 'DeleteArchivo');
+            }
+        }
+
+        logger.info(`Archivo ${documentoId} eliminado correctamente`, 'DeleteArchivo');
+
+        return res.status(200).json({
+            success: true,
+            message: 'Documento eliminado correctamente'
+        });
+
+    } catch (error) {
+        logger.error(`Error eliminando documento: ${error.message}`, 'DeleteArchivo');
+        return res.status(500).json({
+            success: false,
+            message: 'Error eliminando documento',
+            error: error.message
+        });
+    }
+});
+
+// Analizar índice de un producto
+router.post('/productos/:id/analizar-indice', async (req, res) => {
+    try {
+        const { id: productoId } = req.params;
+
+        // Verificar que el producto existe
+        const producto = await db('tdr_producto')
+            .where('id', productoId)
+            .first();
+
+        if (!producto) {
+            return res.status(404).json({
+                success: false,
+                message: 'Producto no encontrado'
+            });
+        }
+
+        // Obtener archivos del producto
+        const archivos = await db('documentos')
+            .where('producto_id', productoId)
+            .select('*');
+
+        if (!archivos || archivos.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No hay archivos para analizar en este producto'
+            });
+        }
+
+        // Por ahora analizamos el primer archivo
+        const archivo = archivos[0];
+        const filePath = path.join(__dirname, '..', 'public', archivo.ruta_archivo);
+
+        // Verificar que el archivo existe
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                message: 'Archivo físico no encontrado'
+            });
+        }
+
+        // Leer el archivo
+        const fileBuffer = await fs.promises.readFile(filePath);
+
+        // Extraer índice explícito
+        logger.info(`Extrayendo índice explícito de ${archivo.nombre_archivo}`, 'AnalisisIndice');
+        const explicitIndex = await indiceAnalyzer.extractExplicitIndex(fileBuffer);
+
+        // Generar índice automático
+        logger.info(`Generando índice automático de ${archivo.nombre_archivo}`, 'AnalisisIndice');
+        const automaticIndex = await indiceAnalyzer.generateAutomaticIndex(fileBuffer);
+
+        // Comparar índices (explícito vs automático)
+        const comparison = indiceAnalyzer.compareIndexes(explicitIndex, automaticIndex);
+
+        // Obtener requisitos del TDR para este producto
+        const entregable = await db('tdr_entregable')
+            .where('id', producto.entregable_id)
+            .first();
+
+        if (!entregable) {
+            return res.status(404).json({
+                success: false,
+                message: 'Entregable no encontrado'
+            });
+        }
+
+        // Obtener los contenidos mínimos del TDR
+        const tdrRequirements = await db('tdr_contenido_minimo')
+            .join('tdr_tipo_documento', 'tdr_contenido_minimo.tipo_documento_id', 'tdr_tipo_documento.id')
+            .join('tdr_seccion_estudio', 'tdr_tipo_documento.seccion_estudio_id', 'tdr_seccion_estudio.id')
+            .where('tdr_seccion_estudio.entregable_id', entregable.id)
+            .select(
+                'tdr_contenido_minimo.nombre_requisito',
+                'tdr_contenido_minimo.descripcion_completa',
+                'tdr_contenido_minimo.es_obligatorio',
+                'tdr_contenido_minimo.orden'
+            )
+            .orderBy('tdr_contenido_minimo.orden');
+
+        // Comparar con índice del TDR
+        const tdrComparison = indiceAnalyzer.compareWithTdrIndex(
+            explicitIndex.found ? explicitIndex : automaticIndex,
+            tdrRequirements
+        );
+
+        logger.info(`Análisis completado para producto ${productoId}`, 'AnalisisIndice');
+
+        return res.status(200).json({
+            success: true,
+            producto: {
+                id: producto.id,
+                nombre: producto.nombre_producto
+            },
+            archivo: {
+                id: archivo.id,
+                nombre: archivo.nombre_archivo
+            },
+            indiceExplicito: {
+                encontrado: explicitIndex.found,
+                items: explicitIndex.items,
+                total: explicitIndex.items.length
+            },
+            indiceAutomatico: {
+                items: automaticIndex.items,
+                total: automaticIndex.totalItems
+            },
+            comparacionInterna: {
+                coincidencias: comparison.matches.length,
+                faltantes: comparison.missing.length,
+                extras: comparison.mismatches.length,
+                consistencia: (comparison.consistency * 100).toFixed(2) + '%',
+                detalles: {
+                    coincidencias: comparison.matches,
+                    faltantesEnContenido: comparison.missing,
+                    noDeclaradosEnIndice: comparison.mismatches
+                }
+            },
+            cumplimientoTdr: {
+                requisitosEncontrados: tdrComparison.compliance.length,
+                requisitosFaltantes: tdrComparison.missing.length,
+                obligatoriosFaltantes: tdrComparison.obligatoryMissing,
+                porcentajeCumplimiento: (tdrComparison.complianceRate * 100).toFixed(2) + '%',
+                detalles: {
+                    cumplimiento: tdrComparison.compliance,
+                    faltantes: tdrComparison.missing
+                }
+            }
+        });
+
+    } catch (error) {
+        logger.error(`Error analizando índice: ${error.message}`, 'AnalisisIndice');
+        console.error('Stack trace completo:', error.stack);
+        return res.status(500).json({
+            success: false,
+            message: 'Error analizando índice',
+            error: error.message,
+            stack: error.stack
         });
     }
 });

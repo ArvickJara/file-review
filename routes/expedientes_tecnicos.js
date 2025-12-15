@@ -131,17 +131,15 @@ router.get('/tdrs/:proyectoId', async (req, res) => {
             secciones_estudio: seccionesPorEntregable[e.id] || []
         }));
 
-        // Buscar el documento TDR del proyecto
+        // Buscar el documento TDR del proyecto (primer archivo subido, no de productos)
         const tdrDocumento = await db('documentos')
-            .where({
-                proyecto_id: proyectoId,
-                tipo_documento: 'tdr'
+            .where('proyecto_id', proyectoId)
+            .whereNull('producto_id')
+            .where(function () {
+                this.where('tipo_documento', 'tdr')
+                    .orWhere('orden', 0);
             })
-            .orWhere(function () {
-                this.where('proyecto_id', proyectoId)
-                    .andWhere('orden', 0);
-            })
-            .orderBy('fecha_subida', 'desc')
+            .orderBy('fecha_subida', 'asc')
             .first();
 
         return res.status(200).json({
@@ -411,7 +409,8 @@ router.delete('/documentos/:documentoId', async (req, res) => {
         await db('documentos').where({ id: documentoId }).del();
 
         if (documento.ruta_archivo) {
-            const absolutePath = path.join(__dirname, '..', 'public', 'uploads', documento.ruta_archivo);
+            // La ruta en BD ya incluye /uploads/, así que solo necesitamos public/
+            const absolutePath = path.join(__dirname, '..', 'public', documento.ruta_archivo);
             try {
                 await fs.unlink(absolutePath);
             } catch (err) {

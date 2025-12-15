@@ -822,9 +822,6 @@ const ExpedientesTecnicosUpload: React.FC = () => {
                                                                 Entregable {index + 1}: {entregable.nombre_entregable || 'Sin título'}
                                                             </p>
                                                             <div className="text-xs text-gray-600 mt-1 space-y-0.5">
-                                                                {typeof entregable.porcentaje_pago === 'number' && (
-                                                                    <p>Porcentaje de pago: {entregable.porcentaje_pago}%</p>
-                                                                )}
                                                                 {typeof entregable.plazo_dias === 'number' && (
                                                                     <p>Plazo: {entregable.plazo_dias} días</p>
                                                                 )}
