@@ -268,7 +268,7 @@ router.post('/productos/:id/archivos', upload.array('archivos', 10), async (req,
                 proyecto_id: proyecto_id,
                 producto_id: productoId,
                 nombre_archivo: file.originalname,
-                ruta_archivo: `/uploads/${file.filename}`,
+                ruta_archivo: file.filename,
                 tipo_documento: 'archivo_producto',
                 orden: 0,
                 fecha_subida: new Date()
@@ -277,7 +277,7 @@ router.post('/productos/:id/archivos', upload.array('archivos', 10), async (req,
             archivosInsertados.push({
                 id: documentoId,
                 nombre_archivo: file.originalname,
-                ruta_archivo: `/uploads/${file.filename}`
+                ruta_archivo: file.filename
             });
         }
 
